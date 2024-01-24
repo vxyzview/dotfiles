@@ -1,0 +1,98 @@
+#!/bin/bash
+
+SCRIPT_NAME="powermenu"
+
+options=(" Poweroff" " Reboot" " Sleep" " Hibernate" " Log Out")
+
+# Function to check the init system
+detect_init_system() {
+  if [ -x "$(command -v systemctl)" ]; then
+    init_system="systemctl"
+  elif [ -x "$(command -v loginctl)" ]; then
+    init_system="loginctl"
+  else
+    dunstify "Unable to detect init system. Exiting."
+    exit 1
+  fi
+}
+
+# Determine init system
+detect_init_system
+
+# Set commands based on init system
+case $init_system in
+  "systemctl")
+    power_command="systemctl poweroff"
+    reboot_command="systemctl reboot"
+    sleep_command="systemctl suspend"
+    hibernate_command="systemctl hibernate"
+    logout_command="systemctl exit"
+    ;;
+  "loginctl")
+    power_command="loginctl poweroff"
+    reboot_command="loginctl reboot"
+    sleep_command="loginctl suspend"
+    hibernate_command="loginctl hibernate"
+    logout_command="loginctl terminate-session"
+    ;;
+  *)
+    dunstify "Unsupported init system. Exiting."
+    exit 1
+    ;;
+esac
+
+# Function to confirm the action
+confirm_option() {
+  confirm=$(echo -e "Yes\nNo" | rofi -dmenu -i -p "Are you sure?" -columns 1 -width 10)
+  [[ "$confirm" == "Yes" ]]
+}
+
+selected_option=$(printf '%s\n' "${options[@]}" | rofi -dmenu -i -p "$SCRIPT_NAME" -columns 1 -width 20) || exit 1
+
+case $selected_option in
+    " Poweroff")
+        if confirm_option; then
+            dunstify "Powering off..."
+            $power_command
+        else
+            dunstify "Power off canceled"
+        fi
+        ;;
+    " Reboot")
+        if confirm_option; then
+            dunstify "Rebooting..."
+            $reboot_command
+        else
+            dunstify "Reboot canceled"
+        fi
+        ;;
+    " Sleep")
+        if confirm_option; then
+            dunstify "Putting system to sleep..."
+            $sleep_command
+        else
+            dunstify "Sleep canceled"
+        fi
+        ;;
+    " Hibernate")
+        if confirm_option; then
+            dunstify "Hibernating..."
+            $hibernate_command
+        else
+            dunstify "Hibernation canceled"
+        fi
+        ;;
+    " Log Out")
+        if confirm_option; then
+            dunstify "Logging out..."
+            $logout_command
+        else
+            dunstify "Log out canceled"
+        fi
+        ;;
+    *)
+        dunstify "Invalid option"
+        ;;
+esac
+
+exit 0

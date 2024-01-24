@@ -1,0 +1,85 @@
+#!/bin/bash
+set -e
+
+# Define the theme and wallpaper folder paths
+qtheme_dir="$HOME/.qtheme"
+wallpaper_dir="$HOME/.wallpaper"
+
+# Function to select a theme
+select_theme() {
+    theme_list=$(ls "$qtheme_dir")
+    selected_theme=$(echo "$theme_list" | rofi -dmenu -p "Select Theme:")
+    
+    if [ -n "$selected_theme" ]; then
+        apply_theme "$selected_theme"
+    else
+        echo "No theme selected. Exiting..."
+        exit 1
+    fi
+}
+
+# Function to apply the selected theme
+apply_theme() {
+    local selected_theme="$1"
+    src_path="$qtheme_dir/$selected_theme"
+    dest_path="$HOME/.config/"
+    
+    # Check if the theme directory exists
+    if [ ! -d "$src_path" ]; then
+        echo "Error: Theme directory '$src_path' not found."
+        exit 1
+    fi
+
+    # Copy the selected theme to the destination
+    cp -r "$src_path/"* "$dest_path"
+
+    # Update the icon theme based on the selected theme
+    case $selected_theme in
+        "redrose")
+            gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3-red"
+            gsettings set org.gnome.desktop.interface icon-theme "Tela-red"
+            ;;
+        "bluerod")
+            gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3-blue"
+            gsettings set org.gnome.desktop.interface icon-theme "Tela-purple"
+            ;;
+        "nyoom")
+            gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3-dark"
+            gsettings set org.gnome.desktop.interface icon-theme "Tela-black"
+            ;;
+    esac
+
+    select_wallpaper
+}
+
+# Function to select a wallpaper
+select_wallpaper() {
+    wallpaper_list=$(ls "$wallpaper_dir")
+    selected_wallpaper=$(echo "$wallpaper_list" | rofi -dmenu -p "Select Wallpaper:")
+
+    if [ -n "$selected_wallpaper" ]; then
+        # Set the selected wallpaper
+        feh --bg-fill "$wallpaper_dir/$selected_wallpaper"
+        echo "Wallpaper '$selected_wallpaper' set successfully!"
+    else
+        echo "No wallpaper selected. Using the default wallpaper."
+    fi
+
+    # Update user directories
+    xdg-user-dirs-update
+    xdg-user-dirs-gtk-update
+
+    # Display user directories
+    xdg-user-dir
+
+    # Restart Qtile to apply the changes
+    qtile cmd-obj -o cmd -f restart
+
+    # Kill already running processes
+    for process in xsettingsd alacritty firefox dunst thunar ksuperkey; do
+        pidof "$process" && killall "$process"
+    done
+}
+
+# Start the script by selecting a theme
+select_theme

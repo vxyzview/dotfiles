@@ -1,0 +1,84 @@
+#!/bin/bash
+
+# This script was made by Lea
+# Email: xealea@xedev.my.id
+# Copyright © 2023 Lea <xealea@proton.me>
+
+# Configuration
+NOTIFY_ICON="" # Use Nerd Fonts icon for notifications
+TIMER_ICON=""  # Use Nerd Fonts icon for timer
+
+# Functions
+notify() {
+  dunstify -u low -i "$NOTIFY_ICON" "$1"
+}
+
+countdown() {
+  for ((sec = $1; sec > 0; sec--)); do
+    notify "Taking shot in: $sec $TIMER_ICON"
+    sleep 1
+  done
+}
+
+convert_image() {
+  convert "$1" \( +clone -background black -shadow 25x30+0+0 \) +swap -background '#bdc2be' -layers merge "$2"
+}
+
+take_screenshot() {
+  maim -u -f png "$1"
+}
+
+take_area_screenshot() {
+  maim -s "$1"
+}
+
+take_window_screenshot() {
+  maim -i "$(xdotool getactivewindow)" "$1"
+}
+
+create_directory() {
+  [[ -d "$1" ]] || mkdir -p "$1" || { echo "Error creating directory: $1"; exit 1; }
+}
+
+# Main
+timestamp=$(date +%Y-%m-%d-%H-%M-%S)
+geometry=$(xrandr --current | awk '/current/ {print $8}')
+pictures_dir="$(xdg-user-dir PICTURES)/Screenshots"
+temp_file="${pictures_dir}/temp_${timestamp}.png"
+file="${pictures_dir}/Screenshot_${timestamp}_${geometry}.png"
+
+create_directory "$pictures_dir"
+
+SCRIPT_NAME="screenshot"
+
+options=(" Screenshot Now Full" " Screenshot In 5 Second" " Screenshot In 10 Second" " Screenshot Window" " Screenshot Area")
+
+selected_option=$(printf '%s\n' "${options[@]}" | rofi -dmenu -i -p "$SCRIPT_NAME" -columns 1 -width 30) || exit 1
+
+# Function to use rofi to prompt the user to open in viewnior
+viewnior_prompt() {
+  open_in_viewnior=$(echo -e "Yes\nNo" | rofi -dmenu -p "Open in viewnior?" -columns 1 -width 20)
+  [[ "$open_in_viewnior" == "Yes" ]] && viewnior "$1"
+}
+
+case $selected_option in
+" Screenshot Now Full" | " Screenshot In 5 Second" | " Screenshot In 10 Second")
+  countdown "${selected_option: -1}" && sleep 2 && take_screenshot "$temp_file" && convert_image "$temp_file" "$file" && notify "Screenshot taken after ${selected_option: -1} seconds."
+  ;;
+" Screenshot Window")
+  take_window_screenshot "$temp_file" && sleep 2 && convert_image "$temp_file" "$file" && notify "Window screenshot taken."
+  ;;
+" Screenshot Area")
+  take_area_screenshot "$temp_file" && sleep 2 && convert_image "$temp_file" "$file" && notify "Area screenshot taken."
+  ;;
+*)
+  exit 1
+  ;;
+esac
+
+viewnior_prompt "$file"
+
+# Remove temp file
+rm "$temp_file"
+
+exit 0
