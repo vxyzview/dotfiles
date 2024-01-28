@@ -2,27 +2,20 @@
 
 # Function to show notification using dunst with progress bar
 show_notification() {
-    # Debugging
-    echo "Title: $1"
-    echo "Message: $2"
-
-    # Define notification title and message
     title="$1"
     message="$2"
-
-    # Get current level
     current_level=""
+
     if [ "$title" = "Brightness" ]; then
         current_level=$(get_brightness)
     else
         current_level=$(get_volume)
     fi
 
-    # Check if it's a brightness or volume notification
     if [ "$title" = "Brightness" ]; then
-        notify-send -u low -r 424242 -h int:value:"$current_level" "$title" "$message Current: $current_level"
+        notify-send -u low -r 424242 -h int:value:"$current_level" -h string:x-dunst-stacktag:progress "$title" "$message Current: $current_level"
     else
-        notify-send -u low -r 424242 -h int:value:"$current_level" "$title" "$message Current: $current_level"
+        notify-send -u low -r 424242 -h int:value:"$current_level" -h string:x-dunst-stacktag:progress "$title" "$message Current: $current_level"
     fi
 }
 
