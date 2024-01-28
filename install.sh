@@ -5,8 +5,8 @@ set -e
 # Configuration
 gtk2_system_wide="/etc/gtk-2.0/"
 gtk3_system_wide="/etc/gtk-3.0/"
-repository="https://github.com/xealea/qtileconf"
-destination="$HOME/qtileconf"
+repository="https://github.com/pyranix/dotfiles"
+destination="$HOME/dotfiles"
 pipewire_conf_dir="/etc/pipewire/pipewire.conf.d"
 pipewire_conf_link="/usr/share/examples/wireplumber/10-wireplumber.conf"
 
