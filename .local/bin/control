@@ -8,8 +8,12 @@ show_notification() {
     # Extract percentage value from message
     percentage=$(echo "$message" | grep -oE '[0-9]+')
 
-    # Send notification with progress bar
-    notify-send "$title" "$message" -h string:x-canonical-private-synchronous:volume -h int:value:$percentage
+    # Check if it's a brightness or volume notification
+    if [ "$title" = "Brightness" ]; then
+        dunstify -u low -r 424242 "$title" -h "string:x-dunst-stack-tag:brightness" -h "int:value:$percentage" "$message"
+    else
+        dunstify -u low -r 424242 "$title" -h "string:x-dunst-stack-tag:volume" -h "int:value:$percentage" "$message"
+    fi
 }
 
 # Function to get current brightness
