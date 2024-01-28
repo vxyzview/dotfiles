@@ -24,14 +24,12 @@ get_volume() {
 
 # Function to change screen brightness
 change_brightness() {
-    brightnessctl s "$1%" # Set brightness to a percentage value
-    show_notification "Control" "Brightness: $1%"
+    brightnessctl s "$1%" && show_notification "Control" "Brightness set to $1%"
 }
 
 # Function to change volume
 change_volume() {
-    pactl set-sink-volume @DEFAULT_SINK@ "$1%" # Set volume to a percentage value
-    show_notification "Control" "Volume: $(get_volume)"
+    pactl set-sink-volume @DEFAULT_SINK@ "$1%" && show_notification "Control" "Volume set to $1%"
 }
 
 # Function to toggle mute/unmute volume
@@ -41,7 +39,7 @@ toggle_mute() {
     if [ "$is_muted" = "yes" ]; then
         show_notification "Control" "Volume: Muted"
     else
-        show_notification "Control" "Volume: $(get_volume)"
+        show_notification "Control" "Volume: Unmuted"
     fi
 }
 
