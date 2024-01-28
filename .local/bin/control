@@ -2,17 +2,27 @@
 
 # Function to show notification using dunst with progress bar
 show_notification() {
+    # Debugging
+    echo "Title: $1"
+    echo "Message: $2"
+
     # Define notification title and message
     title="$1"
     message="$2"
-    # Extract percentage value from message
-    percentage=$(echo "$message" | grep -oE '[0-9]+')
+
+    # Get current level
+    current_level=""
+    if [ "$title" = "Brightness" ]; then
+        current_level=$(get_brightness)
+    else
+        current_level=$(get_volume)
+    fi
 
     # Check if it's a brightness or volume notification
     if [ "$title" = "Brightness" ]; then
-        dunstify -u low -r 424242 "$title" -h "string:x-dunst-stack-tag:brightness" -h "int:value:$percentage" "$message"
+        notify-send -u low -r 424242 -h int:value:"$current_level" "$title" "$message Current: $current_level"
     else
-        dunstify -u low -r 424242 "$title" -h "string:x-dunst-stack-tag:volume" -h "int:value:$percentage" "$message"
+        notify-send -u low -r 424242 -h int:value:"$current_level" "$title" "$message Current: $current_level"
     fi
 }
 
@@ -28,12 +38,12 @@ get_volume() {
 
 # Function to change screen brightness
 change_brightness() {
-    brightnessctl s "$1%" && show_notification "Control" "Brightness set to $1%"
+    brightnessctl s "$1%" && sleep 0.1 && show_notification "Brightness" "Now"
 }
 
 # Function to change volume
 change_volume() {
-    pactl set-sink-volume @DEFAULT_SINK@ "$1%" && show_notification "Control" "Volume set to $1%"
+    pactl set-sink-volume @DEFAULT_SINK@ "$1%" && sleep 0.1 && show_notification "Volume" "Now"
 }
 
 # Function to toggle mute/unmute volume
