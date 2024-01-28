@@ -1,2 +1,2 @@
 #!/bin/sh
-feh --no-fehbg --bg-fill $HOME/.wallpaper/alena-aenami-away-1k.jpg 
+feh --no-fehbg --bg-fill $HOME/.wallpaper/main.png 
