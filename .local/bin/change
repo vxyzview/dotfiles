@@ -7,26 +7,28 @@ wallpaper_dir="$HOME/.wallpaper"
 
 # Function to select a theme
 select_theme() {
+    local theme_list selected_theme
     theme_list=$(ls "$qtheme_dir")
     selected_theme=$(echo "$theme_list" | rofi -dmenu -p "Select Theme:")
-    
+
     if [ -n "$selected_theme" ]; then
         apply_theme "$selected_theme"
     else
-        echo "No theme selected. Exiting..."
+        notify-send "No theme selected. Exiting..."
         exit 1
     fi
 }
 
 # Function to apply the selected theme
 apply_theme() {
-    local selected_theme="$1"
+    local selected_theme src_path dest_path
+    selected_theme="$1"
     src_path="$qtheme_dir/$selected_theme"
     dest_path="$HOME/.config/"
-    
+
     # Check if the theme directory exists
     if [ ! -d "$src_path" ]; then
-        echo "Error: Theme directory '$src_path' not found."
+        notify-send "Error: Theme directory '$src_path' not found."
         exit 1
     fi
 
@@ -36,62 +38,63 @@ apply_theme() {
     # Update the icon theme based on the selected theme
     case $selected_theme in
         "redrose")
-            gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3-red"
-            gsettings set org.gnome.desktop.interface icon-theme "Tela-red"
+            set_gnome_theme "adw-gtk3-red" "Tela-red"
             ;;
         "bluerod")
-            gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3-blue"
-            gsettings set org.gnome.desktop.interface icon-theme "Tela-purple"
+            set_gnome_theme "adw-gtk3-blue" "Tela-purple"
             ;;
         "nyoom")
-            gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3-dark"
-            gsettings set org.gnome.desktop.interface icon-theme "Tela-black"
+            set_gnome_theme "adw-gtk3-dark" "Tela-black"
+            ;;
+        *)
+            notify-send "Unknown theme: $selected_theme"
+            exit 1
             ;;
     esac
 
     select_wallpaper
 }
 
+# Function to set GNOME themes
+set_gnome_theme() {
+    gsettings set org.gnome.desktop.interface gtk-theme "$1"
+    gsettings set org.gnome.desktop.interface icon-theme "$2"
+}
+
 # Function to select a wallpaper
 select_wallpaper() {
+    local wallpaper_list selected_wallpaper
     wallpaper_list=$(ls "$wallpaper_dir")
     selected_wallpaper=$(echo "$wallpaper_list" | rofi -dmenu -p "Select Wallpaper:")
 
     if [ -n "$selected_wallpaper" ]; then
         # Set the selected wallpaper
         feh --bg-fill "$wallpaper_dir/$selected_wallpaper"
-        echo "Wallpaper '$selected_wallpaper' set successfully!"
+        notify-send "Wallpaper '$selected_wallpaper' set successfully!"
     else
-        echo "No wallpaper selected. Using the default wallpaper."
+        notify-send "No wallpaper selected. Using the default wallpaper."
     fi
 
     # Update user directories
     xdg-user-dirs-update
     xdg-user-dirs-gtk-update
 
-    # Display user directories
-    xdg-user-dir
-
     # Kill already running processes
-    for process in xsettingsd firefox dunst thunar ksuperkey; do
-        pidof "$process" && killall "$process"
-    done
+    pkill -f "xsettingsd|firefox|dunst|thunar|ksuperkey"
 
     # Restart Qtile to apply the changes
-    qtile cmd-obj -o cmd -f restart
-
-    # Quit/Not
     prompt_exit_qtile
 }
 
 # Function to prompt for exiting Qtile
 prompt_exit_qtile() {
+    local user_response
     user_response=$(rofi -dmenu -p "Exit Qtile for better optimization and theme change?")
     if [ "$user_response" == "yes" ]; then
-        # Restart Qtile to apply the changes
         qtile cmd-obj -o cmd -f shutdown
     else
-        echo "Exiting script without exiting Qtile."
+        qtile cmd-obj -o cmd -f restart
+        notify-send "Restarting the Qtile."
     fi
 }
 
