@@ -2,28 +2,18 @@
 set -e
 
 # Define the theme and wallpaper folder paths
-THEME_DIR="$HOME/.qtheme"
-WALLPAPER_DIR="$HOME/.wallpaper"
+qtheme_dir="$HOME/.qtheme"
+wallpaper_dir="$HOME/.wallpaper"
 
 # Function to select a theme
 select_theme() {
-    if [ -d "$THEME_DIR" ]; then
-        theme_list=$(ls "$THEME_DIR")
-        if [ -n "$theme_list" ]; then
-            selected_theme=$(rofi -dmenu -p "Select Theme:" <<< "$theme_list")
-            
-            if [ -n "$selected_theme" ]; then
-                apply_theme "$selected_theme"
-            else
-                echo "No theme selected. Exiting..."
-                exit 1
-            fi
-        else
-            echo "Error: No themes found in '$THEME_DIR'. Exiting..."
-            exit 1
-        fi
+    theme_list=$(ls "$qtheme_dir")
+    selected_theme=$(echo "$theme_list" | rofi -dmenu -p "Select Theme:")
+    
+    if [ -n "$selected_theme" ]; then
+        apply_theme "$selected_theme"
     else
-        echo "Error: Theme directory '$THEME_DIR' not found. Exiting..."
+        echo "No theme selected. Exiting..."
         exit 1
     fi
 }
@@ -31,46 +21,35 @@ select_theme() {
 # Function to apply the selected theme
 apply_theme() {
     local selected_theme="$1"
-    SRC_PATH="$THEME_DIR/$selected_theme"
-    DEST_PATH="$HOME/.config/"
-
+    src_path="$qtheme_dir/$selected_theme"
+    dest_path="$HOME/.config/"
+    
     # Check if the theme directory exists
-    if [ ! -d "$SRC_PATH" ]; then
-        echo "Error: Theme directory '$SRC_PATH' not found."
+    if [ ! -d "$src_path" ]; then
+        echo "Error: Theme directory '$src_path' not found."
         exit 1
     fi
 
     # Copy the selected theme to the destination
-    cp -r "$SRC_PATH/"* "$DEST_PATH"
+    cp -r "$src_path/"* "$dest_path"
 
-    # Update GTK settings based on the selected theme
-    update_gtk_settings "$selected_theme"
-
-    select_wallpaper
-}
-
-# Function to update GTK settings based on the selected theme
-update_gtk_settings() {
-    case $1 in
+    # Update the icon theme based on the selected theme
+    case $selected_theme in
         "redrose")
-            set_gtk_settings "adw-gtk3-red" "Tela-red"
+            gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3-red"
+            gsettings set org.gnome.desktop.interface icon-theme "Tela-red"
             ;;
         "bluerod")
-            set_gtk_settings "adw-gtk3-blue" "Tela-purple"
+            gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3-blue"
+            gsettings set org.gnome.desktop.interface icon-theme "Tela-purple"
             ;;
         "nyoom")
-            set_gtk_settings "adw-gtk3-dark" "Tela-black"
-            ;;
-        *)
-            echo "Warning: Unknown theme. GTK settings not updated."
+            gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3-dark"
+            gsettings set org.gnome.desktop.interface icon-theme "Tela-black"
             ;;
     esac
-}
 
-# Function to set GTK settings
-set_gtk_settings() {
-    gsettings set org.gnome.desktop.interface gtk-theme "$1"
-    gsettings set org.gnome.desktop.interface icon-theme "$2"
+    select_wallpaper
 }
 
 # Function to select a wallpaper
