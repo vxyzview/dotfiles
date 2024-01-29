@@ -72,8 +72,8 @@ keys = [
     #    Key([mod], "r", lazy.spawncmd(), desc="Spawn a command using a prompt widget"),
     # Misc and my custom cmd
     Key([mod], "x", lazy.spawn("rofi -show drun"), desc="Spawn a command launcher"),
-    Key([], "XF86AudioRaiseVolume", lazy.spawn("control volume +5"), desc="Volume Up"),
-    Key([], "XF86AudioLowerVolume", lazy.spawn("control volume -5"), desc="Volume Down"),
+    Key([], "XF86AudioRaiseVolume", lazy.spawn("control volume +1"), desc="Volume Up"),
+    Key([], "XF86AudioLowerVolume", lazy.spawn("control volume -1"), desc="Volume Down"),
     Key([], "XF86AudioMute", lazy.spawn("control mute x"), desc="Volume Mute"),
     Key([], "XF86AudioPlay", lazy.spawn("playerctl play-pause"), desc="playerctl"),
     Key([], "XF86AudioPrev", lazy.spawn("playerctl previous"), desc="playerctl"),
@@ -81,13 +81,13 @@ keys = [
     Key(
         [],
         "XF86MonBrightnessUp",
-        lazy.spawn("control brightness 5+"),
+        lazy.spawn("control brightness 1+"),
         desc="Brightness Up",
     ),
     Key(
         [],
         "XF86MonBrightnessDown",
-        lazy.spawn("control brightness 5-"),
+        lazy.spawn("control brightness 1-"),
         desc="Brightness Down",
     ),
     Key([mod], "e", lazy.spawn("thunar"), desc="File manager"),
