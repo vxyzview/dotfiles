@@ -44,13 +44,16 @@ sync_config_files() {
     rsync -a --exclude=".git*" --exclude="install.sh" "$destination/" "$HOME"
 }
 
+# Fuction for install starship shell
+starship_shell_install() {
+    # Starship installasion
+    curl -sS https://starship.rs/install.sh | sh
+}
+
 # Function for additional configuration
 additional_configuration() {
     # Update font cache
     fc-cache -r
-
-    # Starship installasion
-    curl -sS https://starship.rs/install.sh | sh
 
     # Copy icon, theme, and font files
     sudo cp -r "$destination/.icons/"* /usr/share/icons/
@@ -76,6 +79,7 @@ additional_configuration() {
 install_packages
 clone_repository
 sync_config_files
+starship_shell_install
 additional_configuration
 
 # Optional: Display a message indicating successful completion
