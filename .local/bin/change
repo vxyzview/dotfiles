@@ -79,6 +79,20 @@ select_wallpaper() {
 
     # Restart Qtile to apply the changes
     qtile cmd-obj -o cmd -f restart
+
+    # Quit/Not
+    prompt_exit_qtile
+}
+
+# Function to prompt for exiting Qtile
+prompt_exit_qtile() {
+    user_response=$(rofi -dmenu -p "Exit Qtile for better optimization and theme change?")
+    if [ "$user_response" == "yes" ]; then
+        # Restart Qtile to apply the changes
+        qtile cmd-obj -o cmd -f shutdown
+    else
+        echo "Exiting script without exiting Qtile."
+    fi
 }
 
 # Start the script by selecting a theme
