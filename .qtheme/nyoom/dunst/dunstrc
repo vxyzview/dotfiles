@@ -277,6 +277,7 @@
     frame_color = "#161616"
     highlight = "#BDC2BE"
     timeout = 10
+    icon = ~/.config/dunst/images/notification.png
 
 [urgency_normal]
     background = "#161616"
@@ -284,6 +285,7 @@
     frame_color = "#161616"
     highlight = "#BDC2BE"
     timeout = 10
+    icon = ~/.config/dunst/images/notification.png
 
 [urgency_critical]
     background = "#161616"
@@ -291,6 +293,7 @@
     frame_color = "#161616"
     highlight = "#BDC2BE"
     timeout = 10
+    icon = ~/.config/dunst/images/notification.png
 
 # Every section that isn't one of the above is interpreted as a rules to
 # override settings for certain messages.

@@ -75,12 +75,18 @@ additional_configuration() {
     xdg-user-dir
 }
 
+# Function for login manager ( not with dbus )
+qtile_login_manager() {
+    sudo mv "$destination/qtile.desktop /usr/share/xsessions/qtile.desktop
+}
+
 # Main execution
 install_packages
 clone_repository
 sync_config_files
 starship_shell_install
 additional_configuration
+qtile_login_manager
 
 # Optional: Display a message indicating successful completion
 echo "Configuration setup completed."
