@@ -86,11 +86,15 @@ select_wallpaper() {
     prompt_exit_qtile
 }
 
-# Function to prompt for exiting Qtile
+# Function to confirm the action
+confirm_option() {
+  confirm=$(echo -e "Yes\nNo" | rofi -dmenu -i -p "Are you sure?" -columns 1 -width 10)
+  [[ "$confirm" == "Yes" ]]
+}
+
+# Function to prompt for exiting Qtile with confirmation
 prompt_exit_qtile() {
-    local user_response
-    user_response=$(rofi -dmenu -p "Exit Qtile for better optimization and theme change?")
-    if [ "$user_response" == "yes" ]; then
+    if confirm_option; then
         qtile cmd-obj -o cmd -f shutdown
     else
         qtile cmd-obj -o cmd -f restart
