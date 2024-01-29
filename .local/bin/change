@@ -7,13 +7,23 @@ WALLPAPER_DIR="$HOME/.wallpaper"
 
 # Function to select a theme
 select_theme() {
-    theme_list=$(ls "$THEME_DIR")
-    selected_theme=$(rofi -dmenu -p "Select Theme:" <<< "$theme_list")
-
-    if [ -n "$selected_theme" ]; then
-        apply_theme "$selected_theme"
+    if [ -d "$THEME_DIR" ]; then
+        theme_list=$(ls "$THEME_DIR")
+        if [ -n "$theme_list" ]; then
+            selected_theme=$(rofi -dmenu -p "Select Theme:" <<< "$theme_list")
+            
+            if [ -n "$selected_theme" ]; then
+                apply_theme "$selected_theme"
+            else
+                echo "No theme selected. Exiting..."
+                exit 1
+            fi
+        else
+            echo "Error: No themes found in '$THEME_DIR'. Exiting..."
+            exit 1
+        fi
     else
-        echo "No theme selected. Exiting..."
+        echo "Error: Theme directory '$THEME_DIR' not found. Exiting..."
         exit 1
     fi
 }
