@@ -2,14 +2,14 @@
 set -e
 
 # Define the theme and wallpaper folder paths
-qtheme_dir="$HOME/.qtheme"
-wallpaper_dir="$HOME/.wallpaper"
+THEME_DIR="$HOME/.qtheme"
+WALLPAPER_DIR="$HOME/.wallpaper"
 
 # Function to select a theme
 select_theme() {
-    theme_list=$(ls "$qtheme_dir")
-    selected_theme=$(echo "$theme_list" | rofi -dmenu -p "Select Theme:")
-    
+    theme_list=$(ls "$THEME_DIR")
+    selected_theme=$(rofi -dmenu -p "Select Theme:" <<< "$theme_list")
+
     if [ -n "$selected_theme" ]; then
         apply_theme "$selected_theme"
     else
@@ -21,35 +21,46 @@ select_theme() {
 # Function to apply the selected theme
 apply_theme() {
     local selected_theme="$1"
-    src_path="$qtheme_dir/$selected_theme"
-    dest_path="$HOME/.config/"
-    
+    SRC_PATH="$THEME_DIR/$selected_theme"
+    DEST_PATH="$HOME/.config/"
+
     # Check if the theme directory exists
-    if [ ! -d "$src_path" ]; then
-        echo "Error: Theme directory '$src_path' not found."
+    if [ ! -d "$SRC_PATH" ]; then
+        echo "Error: Theme directory '$SRC_PATH' not found."
         exit 1
     fi
 
     # Copy the selected theme to the destination
-    cp -r "$src_path/"* "$dest_path"
+    cp -r "$SRC_PATH/"* "$DEST_PATH"
 
-    # Update the icon theme based on the selected theme
-    case $selected_theme in
-        "redrose")
-            gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3-red"
-            gsettings set org.gnome.desktop.interface icon-theme "Tela-red"
-            ;;
-        "bluerod")
-            gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3-blue"
-            gsettings set org.gnome.desktop.interface icon-theme "Tela-purple"
-            ;;
-        "nyoom")
-            gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3-dark"
-            gsettings set org.gnome.desktop.interface icon-theme "Tela-black"
-            ;;
-    esac
+    # Update GTK settings based on the selected theme
+    update_gtk_settings "$selected_theme"
 
     select_wallpaper
+}
+
+# Function to update GTK settings based on the selected theme
+update_gtk_settings() {
+    case $1 in
+        "redrose")
+            set_gtk_settings "adw-gtk3-red" "Tela-red"
+            ;;
+        "bluerod")
+            set_gtk_settings "adw-gtk3-blue" "Tela-purple"
+            ;;
+        "nyoom")
+            set_gtk_settings "adw-gtk3-dark" "Tela-black"
+            ;;
+        *)
+            echo "Warning: Unknown theme. GTK settings not updated."
+            ;;
+    esac
+}
+
+# Function to set GTK settings
+set_gtk_settings() {
+    gsettings set org.gnome.desktop.interface gtk-theme "$1"
+    gsettings set org.gnome.desktop.interface icon-theme "$2"
 }
 
 # Function to select a wallpaper
