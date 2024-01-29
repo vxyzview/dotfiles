@@ -77,7 +77,7 @@ additional_configuration() {
 
 # Function for login manager ( not with dbus )
 qtile_login_manager() {
-    sudo mv "$destination/qtile.desktop /usr/share/xsessions/qtile.desktop
+    sudo mv "$destination/qtile.desktop" /usr/share/xsessions/qtile.desktop
 }
 
 # Main execution
