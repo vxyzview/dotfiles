@@ -7,17 +7,10 @@ gtk2_system_wide="/etc/gtk-2.0/"
 gtk3_system_wide="/etc/gtk-3.0/"
 repository="https://github.com/pyranix/dotfiles"
 destination="$HOME/dotfiles"
-pipewire_conf_dir="/etc/pipewire/pipewire.conf.d"
-pipewire_conf_link="/usr/share/examples/wireplumber/10-wireplumber.conf"
 
 # Function to check if a directory or file exists
 check_existence() {
     [ -e "$1" ]
-}
-
-# Function to check if a symbolic link exists
-check_symlink() {
-    [ -L "$1" ]
 }
 
 # Function for package installation based on distribution
@@ -30,18 +23,6 @@ install_packages() {
         echo "Packages installed successfully on Arch Linux."
     else
         echo "Package installation for this distribution is not supported in this script."
-    fi
-}
-
-# Function for audio setup
-setup_audio() {
-    if command -v pacman &>/dev/null && grep -qi 'arch' /etc/os-release; then
-        if ! check_symlink "$pipewire_conf_dir/10-wireplumber.conf"; then
-            sudo mkdir -p "$pipewire_conf_dir" && sudo ln -s "$pipewire_conf_link" "$pipewire_conf_dir/"
-            echo "Audio setup completed."
-        else
-            echo "Audio setup already exists. Skipping."
-        fi
     fi
 }
 
@@ -93,7 +74,6 @@ additional_configuration() {
 
 # Main execution
 install_packages
-setup_audio
 clone_repository
 sync_config_files
 additional_configuration
