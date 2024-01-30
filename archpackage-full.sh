@@ -1,3 +1,5 @@
+#!/bin/bash
+
 ## Arch Packages ------------------------------
 #alsa-utils
 amd-ucode
