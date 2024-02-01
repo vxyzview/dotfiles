@@ -4,18 +4,18 @@
 show_notification() {
     title="$1"
     message="$2"
-    current_level=""
-
-    if [ "$title" = "Brightness" ]; then
-        current_level=$(get_brightness)
-    else
-        current_level=$(get_volume)
-    fi
+    current_level="$3"
 
     if [ "$title" = "Brightness" ]; then
         notify-send -i "$HOME/.notify/images/smart-bulb.png" -r 424242 -h int:value:"$current_level" -h string:x-dunst-stacktag:progress "$title" "$message Current: $current_level"
-    else
-        notify-send -i "$HOME/.notify/images/music.png" -r 424242 -h int:value:"$current_level" -h string:x-dunst-stacktag:progress "$title" "$message Current: $current_level"
+    elif [ "$title" = "Volume" ]; then
+        if [ "$current_level" = "mute" ]; then
+            notify-send -i "$HOME/.notify/images/mute.png" -r 424242 "$message"
+        elif [ "$current_level" = "unmute" ]; then
+            notify-send -i "$HOME/.notify/images/music.png" -r 424242 -h int:value:"$current_level" -h string:x-dunst-stacktag:progress "$title" "$message Current: $current_level"
+        else
+            notify-send -i "$HOME/.notify/images/music.png" -r 424242 -h int:value:"$current_level" -h string:x-dunst-stacktag:progress "$title" "$message Current: $current_level"
+        fi
     fi
 }
 
@@ -33,12 +33,12 @@ get_volume() {
 
 # Function to change screen brightness
 change_brightness() {
-    brightnessctl s "$1%" && sleep 0.1 && show_notification "Brightness" "Now"
+    brightnessctl s "$1%" && sleep 0.1 && show_notification "Brightness" "Now" ""
 }
 
 # Function to change volume
 change_volume() {
-    pactl set-sink-volume @DEFAULT_SINK@ "$1%" && sleep 0.1 && show_notification "Volume" "Now"
+    pactl set-sink-volume @DEFAULT_SINK@ "$1%" && sleep 0.1 && show_notification "Volume" "Now" "$1%"
 }
 
 # Function to toggle mute/unmute volume
@@ -46,9 +46,9 @@ toggle_mute() {
     pactl set-sink-mute @DEFAULT_SINK@ toggle
     is_muted=$(pactl list sinks | awk '/Mute/{print $2; exit}')
     if [ "$is_muted" = "yes" ]; then
-        show_notification "Control" "Volume: Muted"
+        show_notification "Control" "Volume: Muted" "mute"
     else
-        show_notification "Control" "Volume: Unmuted"
+        show_notification "Control" "Volume: Unmuted" "unmute"
     fi
 }
 
