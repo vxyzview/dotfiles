@@ -21,7 +21,7 @@ selected_wallpaper=$(ls "$WALLPAPER_DIR" | rofi -dmenu -p "Select Wallpaper:")
 if [ -n "$selected_wallpaper" ]; then
     # Set the selected wallpaper
     feh --bg-fill "$WALLPAPER_DIR/$selected_wallpaper"
-    echo "Wallpaper '$selected_wallpaper' set successfully!"
+    notify-send -i "$HOME/.notify/images/wallpaper.png" "Wallpaper '$selected_wallpaper' set successfully!"
 else
-    echo "No wallpaper selected. Using the default wallpaper."
+    notify-send -i "$HOME/.notify/images/wallpaper.png" "No wallpaper selected. Using the default wallpaper."
 fi
