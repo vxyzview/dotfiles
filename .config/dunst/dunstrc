@@ -166,7 +166,7 @@
     max_icon_size = 32
 
     # Paths to default icons.
-    icon_path = /usr/share/icons/Tela-black/apps/scalable:/usr/share/icons/Tela-black/devices/scalable/
+    icon_path = /usr/share/icons/Tela-black/24/apps/scalable:/usr/share/icons/Tela-black/24/devices/scalable/
 
     ### History ###
 
