@@ -1,19 +1,20 @@
 #!/bin/bash
 set -e
 
-# Define the theme and wallpaper folder paths
-qtheme_dir="$HOME/.qtheme"
-wallpaper_dir="$HOME/.wallpaper"
+# Define the theme, wallpaper, and Qtile folder paths
+QTHEME_DIR="$HOME/.qtheme"
+WALLPAPER_DIR="$HOME/.wallpaper"
+QTILE_CONFIG_DIR="$HOME/.config/qtile"
 
 # Function to select a theme
 select_theme() {
-    theme_list=$(ls "$qtheme_dir")
+    theme_list=$(ls "$QTHEME_DIR")
     selected_theme=$(echo "$theme_list" | rofi -dmenu -p "Select Theme:")
     
     if [ -n "$selected_theme" ]; then
         apply_theme "$selected_theme"
     else
-        echo "No theme selected. Exiting..."
+        notify-send -u low "No theme selected. Exiting..."
         exit 1
     fi
 }
@@ -21,48 +22,54 @@ select_theme() {
 # Function to apply the selected theme
 apply_theme() {
     local selected_theme="$1"
-    src_path="$qtheme_dir/$selected_theme"
-    dest_path="$HOME/.config/"
+    SRC_PATH="$QTHEME_DIR/$selected_theme"
+    DEST_PATH="$HOME/.config/"
     
     # Check if the theme directory exists
-    if [ ! -d "$src_path" ]; then
-        echo "Error: Theme directory '$src_path' not found."
+    if [ ! -d "$SRC_PATH" ]; then
+        notify-send -u low "Error: Theme directory '$SRC_PATH' not found."
         exit 1
     fi
 
     # Copy the selected theme to the destination
-    cp -r "$src_path/"* "$dest_path"
+    cp -r "$SRC_PATH/"* "$DEST_PATH"
 
     # Update the icon theme based on the selected theme
     case $selected_theme in
         "redrose")
-            gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3-red"
-            gsettings set org.gnome.desktop.interface icon-theme "Tela-red"
+            set_gnome_settings "adw-gtk3-red" "Tela-red"
             ;;
         "bluerod")
-            gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3-blue"
-            gsettings set org.gnome.desktop.interface icon-theme "Tela-purple"
+            set_gnome_settings "adw-gtk3-blue" "Tela-purple"
             ;;
         "nyoom")
-            gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3-dark"
-            gsettings set org.gnome.desktop.interface icon-theme "Tela-black"
+            set_gnome_settings "adw-gtk3-dark" "Tela-black"
             ;;
     esac
 
     select_wallpaper
 }
 
+# Function to set GNOME settings for GTK and icon themes
+set_gnome_settings() {
+    local gtk_theme="$1"
+    local icon_theme="$2"
+
+    gsettings set org.gnome.desktop.interface gtk-theme "$gtk_theme"
+    gsettings set org.gnome.desktop.interface icon-theme "$icon_theme"
+}
+
 # Function to select a wallpaper
 select_wallpaper() {
-    wallpaper_list=$(ls "$wallpaper_dir")
+    wallpaper_list=$(ls "$WALLPAPER_DIR")
     selected_wallpaper=$(echo "$wallpaper_list" | rofi -dmenu -p "Select Wallpaper:")
 
     if [ -n "$selected_wallpaper" ]; then
         # Set the selected wallpaper
-        feh --bg-fill "$wallpaper_dir/$selected_wallpaper"
-        echo "Wallpaper '$selected_wallpaper' set successfully!"
+        feh --bg-fill "$WALLPAPER_DIR/$selected_wallpaper"
+        notify-send -u low "Wallpaper '$selected_wallpaper' set successfully!"
     else
-        echo "No wallpaper selected. Using the default wallpaper."
+        notify-send -u low "No wallpaper selected. Using the default wallpaper."
     fi
 
     # Update user directories
@@ -72,14 +79,33 @@ select_wallpaper() {
     # Display user directories
     xdg-user-dir
 
-    # Kill already running processes
-    for process in xsettingsd firefox dunst thunar ksuperkey; do
-        pidof "$process" && killall "$process"
-    done
-
-    # Restart Qtile to apply the changes
-    qtile cmd-obj -o cmd -f restart
+    restart_qtile
 }
+
+# Function to restart Qtile
+restart_qtile() {
+    if qtile cmd-obj -o cmd -f restart; then
+        notify-send -u low "Qtile restarted successfully."
+    else
+        notify-send -u low "Error: Unable to restart Qtile. Check the configuration and try again."
+    fi
+}
+
+# Main script
+
+# Check if Rofi, Feh, or Qtile are installed
+if ! command -v rofi &> /dev/null || ! command -v feh &> /dev/null || ! command -v qtile &> /dev/null; then
+    notify-send -u low "Error: Rofi, feh, or qtile not found. Please install the required tools."
+    exit 1
+fi
+
+# Check if the Qtile config directory exists
+if [ ! -d "$QTILE_CONFIG_DIR" ]; then
+    notify-send -u low "Error: Qtile config directory not found: $QTILE_CONFIG_DIR"
+    exit 1
+fi
 
 # Start the script by selecting a theme
 select_theme
+
+exit 0
