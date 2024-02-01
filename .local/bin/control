@@ -23,7 +23,7 @@ show_notification() {
 get_brightness() {
     current_brightness=$(brightnessctl g)
     max_brightness=$(brightnessctl m)
-    printf "%.0f" "$(echo "scale=2; ($current_brightness / $max_brightness) * 100" | bc)"
+    echo $(( (current_brightness * 100) / max_brightness ))
 }
 
 # Function to get current volume
