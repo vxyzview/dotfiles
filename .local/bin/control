@@ -3,7 +3,6 @@
 # Constants
 NOTIFY_ID=424242
 STACK_TAG=progress
-SLEEP_DURATION=0.1
 ICON_PATH_VOLUME="$HOME/.notify/images/music.png"
 ICON_PATH_MUTE="$HOME/.notify/images/mute.png"
 ICON_PATH_UNMUTE="$HOME/.notify/images/music.png"
@@ -41,12 +40,12 @@ get_volume() {
 
 # Function to change screen brightness
 change_brightness() {
-    brightnessctl s "$1" && sleep "$SLEEP_DURATION" && show_notification "Brightness" "Now"
+    brightnessctl s "$1" && show_notification "Brightness" "Now"
 }
 
 # Function to change volume
 change_volume() {
-    pactl set-sink-volume @DEFAULT_SINK@ "$1%" && sleep "$SLEEP_DURATION" && show_notification "Volume" "Now"
+    pactl set-sink-volume @DEFAULT_SINK@ "$1%" && show_notification "Volume" "Now"
 }
 
 # Function to toggle mute/unmute volume
