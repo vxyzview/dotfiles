@@ -31,7 +31,6 @@ run pipewire &
 run nm-applet &
 run xfsettingsd &
 run blueman-applet &
-run /usr/bin/dunst &
 run xfce4-power-manager &
 run xsetroot -cursor_name left_ptr &
 run picom --config "$DIR/picom.conf" --daemon &
