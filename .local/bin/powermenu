@@ -2,13 +2,14 @@
 
 SCRIPT_NAME="powermenu"
 
+# Power menu options
 options=(" Poweroff" " Reboot" " Sleep" " Hibernate" " Log Out")
 
 # Function to check the init system
 detect_init_system() {
-  if [ -x "$(command -v systemctl)" ]; then
+  if command -v systemctl &> /dev/null; then
     init_system="systemctl"
-  elif [ -x "$(command -v loginctl)" ]; then
+  elif command -v loginctl &> /dev/null; then
     init_system="loginctl"
   else
     notify-send -u low "Unable to detect init system. Exiting."
@@ -46,6 +47,8 @@ confirm_option() {
   confirm=$(echo -e "Yes\nNo" | rofi -dmenu -i -p "Are you sure?" -columns 1 -width 10)
   [[ "$confirm" == "Yes" ]]
 }
+
+# Main script
 
 selected_option=$(printf '%s\n' "${options[@]}" | rofi -dmenu -i -p "$SCRIPT_NAME" -columns 1 -width 20) || exit 1
 
