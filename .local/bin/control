@@ -12,11 +12,7 @@ show_notification() {
         current_level=$(get_volume)
     fi
 
-    if [ "$title" = "Brightness" ]; then
-        notify-send -u low -r 424242 -h int:value:"$current_level" -h string:x-dunst-stacktag:progress "$title" "$message Current: $current_level"
-    else
-        notify-send -u low -r 424242 -h int:value:"$current_level" -h string:x-dunst-stacktag:progress "$title" "$message Current: $current_level"
-    fi
+    notify-send -u low -r 424242 -h int:value:"$current_level" -h string:x-dunst-stacktag:progress "$title" "$message Current: $current_level"
 }
 
 # Function to get current brightness as a percentage of maximum brightness
