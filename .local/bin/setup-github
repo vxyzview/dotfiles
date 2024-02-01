@@ -19,8 +19,8 @@
 
 # Function to read user input with a prompt
 read_input() {
-	read -p "$1: " user_input
-	echo "$user_input"
+    user_input=$(notify-send -u low -p "Enter your GitHub email:" "$(read -p 'Enter your GitHub email: ' user_input && echo "$user_input")")
+    echo "$user_input"
 }
 
 # Prompt user for GitHub email and name
@@ -32,24 +32,24 @@ git config --global user.email "$github_email"
 git config --global user.name "$github_name"
 
 # Generate SSH key
-echo "Generating SSH key..."
+notify-send -u low "Generating SSH key..."
 ssh-keygen -t rsa -b 4096 -C "$github_email"
-echo "SSH key generated."
+notify-send -u low "SSH key generated."
 
 # Copy SSH key to clipboard if xclip is available
 if command -v xclip >/dev/null 2>&1; then
-	echo "Copying SSH key to clipboard..."
-	xclip -sel clip <~/.ssh/id_rsa.pub
-	echo "SSH key copied to clipboard."
+    notify-send -u low "Copying SSH key to clipboard..."
+    xclip -sel clip <~/.ssh/id_rsa.pub
+    notify-send -u low "SSH key copied to clipboard."
 else
-	echo "xclip is not installed. Please manually copy the SSH key to add to your GitHub account."
+    notify-send -u low "xclip is not installed. Please manually copy the SSH key to add to your GitHub account."
 fi
 
 # Open GitHub settings page if xdg-open is available
 if command -v xdg-open >/dev/null 2>&1; then
-	echo "Opening GitHub settings page..."
-	xdg-open "https://github.com/settings/keys"
-	echo "Please add the SSH key to your GitHub account."
+    notify-send -u low "Opening GitHub settings page..."
+    xdg-open "https://github.com/settings/keys"
+    notify-send -u low "Please add the SSH key to your GitHub account."
 else
-	echo "xdg-open is not installed. Please manually open the GitHub settings page and add the SSH key."
+    notify-send -u low "xdg-open is not installed. Please manually open the GitHub settings page and add the SSH key."
 fi
