@@ -1,28 +1,36 @@
-#!/bin/sh
+#!/bin/bash
+
+# Constants
+NOTIFY_ID=424242
+STACK_TAG=progress
+SLEEP_DURATION=0.1
+ICON_PATH_VOLUME="$HOME/.notify/images/music.png"
+ICON_PATH_MUTE="$HOME/.notify/images/mute.png"
+ICON_PATH_UNMUTE="$HOME/.notify/images/music.png"
+ICON_PATH_BRIGHTNESS="$HOME/.notify/images/smart-bulb.png"
 
 # Function to show notification using dunst with progress bar
 show_notification() {
-    title="$1"
-    message="$2"
-    current_level="$3"
+    local title="$1"
+    local message="$2"
+    local current_level=""
+    local icon_path=""
 
     if [ "$title" = "Brightness" ]; then
-        notify-send -i "$HOME/.notify/images/smart-bulb.png" -r 424242 -h int:value:"$current_level" -h string:x-dunst-stacktag:progress "$title" "$message Current: $current_level"
-    elif [ "$title" = "Volume" ]; then
-        if [ "$current_level" = "mute" ]; then
-            notify-send -i "$HOME/.notify/images/mute.png" -r 424242 "$message"
-        elif [ "$current_level" = "unmute" ]; then
-            notify-send -i "$HOME/.notify/images/music.png" -r 424242 -h int:value:"$current_level" -h string:x-dunst-stacktag:progress "$title" "$message Current: $current_level"
-        else
-            notify-send -i "$HOME/.notify/images/music.png" -r 424242 -h int:value:"$current_level" -h string:x-dunst-stacktag:progress "$title" "$message Current: $current_level"
-        fi
+        current_level=$(get_brightness)
+        icon_path="$ICON_PATH_BRIGHTNESS"
+    else
+        current_level=$(get_volume)
+        icon_path="$ICON_PATH_VOLUME"
     fi
+
+    notify-send -u low -i "$icon_path" -r "$NOTIFY_ID" -h int:value:"$current_level" -h string:x-dunst-stacktag:"$STACK_TAG" "$title" "$message Current: $current_level"
 }
 
 # Function to get current brightness as a percentage of maximum brightness
 get_brightness() {
-    current_brightness=$(brightnessctl g)
-    max_brightness=$(brightnessctl m)
+    local current_brightness=$(brightnessctl g)
+    local max_brightness=$(brightnessctl m)
     echo $(( (current_brightness * 100) / max_brightness ))
 }
 
@@ -33,24 +41,27 @@ get_volume() {
 
 # Function to change screen brightness
 change_brightness() {
-    brightnessctl s "$1%" && sleep 0.1 && show_notification "Brightness" "Now" ""
+    brightnessctl s "$1" && sleep "$SLEEP_DURATION" && show_notification "Brightness" "Now"
 }
 
 # Function to change volume
 change_volume() {
-    pactl set-sink-volume @DEFAULT_SINK@ "$1%" && sleep 0.1 && show_notification "Volume" "Now" "$1%"
+    pactl set-sink-volume @DEFAULT_SINK@ "$1%" && sleep "$SLEEP_DURATION" && show_notification "Volume" "Now"
 }
 
 # Function to toggle mute/unmute volume
 toggle_mute() {
     pactl set-sink-mute @DEFAULT_SINK@ toggle
-    is_muted=$(pactl list sinks | awk '/Mute/{print $2; exit}')
+    local is_muted=$(pactl list sinks | awk '/Mute/{print $2; exit}')
+
     if [ "$is_muted" = "yes" ]; then
-        show_notification "Control" "Volume: Muted" "mute"
+        show_notification "Control" "Muted" "$ICON_PATH_MUTE"
     else
-        show_notification "Control" "Volume: Unmuted" "unmute"
+        show_notification "Control" "Unmuted" "$ICON_PATH_UNMUTE"
     fi
 }
+
+# Main script
 
 # Check the number of arguments
 if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
@@ -58,6 +69,7 @@ if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
     exit 1
 fi
 
+# Handle command line arguments
 case $1 in
     brightness)
         change_brightness "$2"
