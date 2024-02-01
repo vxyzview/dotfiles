@@ -4,13 +4,9 @@
 # Email: xealea@xedev.my.id
 # Copyright © 2023 Lea <xealea@proton.me>
 
-# Configuration
-NOTIFY_ICON="" # Use Nerd Fonts icon for notifications
-TIMER_ICON=""  # Use Nerd Fonts icon for timer
-
 # Functions
 notify() {
-  dunstify -u low -i "$NOTIFY_ICON" "$1"
+  notify-send -i "$HOME/.notify/images/ss.png" "$1"
 }
 
 countdown() {
