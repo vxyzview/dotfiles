@@ -11,7 +11,7 @@ detect_init_system() {
   elif [ -x "$(command -v loginctl)" ]; then
     init_system="loginctl"
   else
-    dunstify "Unable to detect init system. Exiting."
+    notify-send -u low "Unable to detect init system. Exiting."
     exit 1
   fi
 }
@@ -36,7 +36,7 @@ case $init_system in
     logout_command="loginctl terminate-session"
     ;;
   *)
-    dunstify "Unsupported init system. Exiting."
+    notify-send -u low "Unsupported init system. Exiting."
     exit 1
     ;;
 esac
@@ -52,42 +52,42 @@ selected_option=$(printf '%s\n' "${options[@]}" | rofi -dmenu -i -p "$SCRIPT_NAM
 case $selected_option in
     " Poweroff")
         if confirm_option; then
-            dunstify "Powering off..."
+            notify-send -i $HOME/.notify/images/power-button.png "Powering off..."
             $power_command
         else
-            dunstify "Power off canceled"
+            notify-send -i $HOME/.notify/images/multiply.png "Power off canceled"
         fi
         ;;
     " Reboot")
         if confirm_option; then
-            dunstify "Rebooting..."
+            notify-send -i $HOME/.notify/images/refresh.png "Rebooting..."
             $reboot_command
         else
-            dunstify "Reboot canceled"
+            notify-send -i $HOME/.notify/images/multiply.png "Reboot canceled"
         fi
         ;;
     " Sleep")
         if confirm_option; then
-            dunstify "Putting system to sleep..."
+            notify-send -i $HOME/.notify/images/sleep.png "Putting system to sleep..."
             $sleep_command
         else
-            dunstify "Sleep canceled"
+            notify-send -i $HOME/.notify/images/multiply.png "Sleep canceled"
         fi
         ;;
     " Hibernate")
         if confirm_option; then
-            dunstify "Hibernating..."
+            notify-send -i $HOME/.notify/images/suspended.png "Hibernating..."
             $hibernate_command
         else
-            dunstify "Hibernation canceled"
+            notify-send -i $HOME/.notify/images/multiply.png "Hibernation canceled"
         fi
         ;;
     " Log Out")
         if confirm_option; then
-            dunstify "Logging out..."
+            notify-send -i $HOME/.notify/images/arrow.png "Logging out..."
             $logout_command
         else
-            dunstify "Log out canceled"
+            notify-send -i $HOME/.notify/images/multiply.png "Log out canceled"
         fi
         ;;
     *)
