@@ -16,7 +16,7 @@ notify() {
 countdown() {
   for ((sec = $1; sec > 0; sec--)); do
     notify "Taking shot in: $sec $TIMER_ICON"
-    sleep 1
+    sleep 0.5  # Adjusted sleep time for faster countdown
   done
 }
 
@@ -28,12 +28,8 @@ take_screenshot() {
   maim -u -f png "$1"
 }
 
-take_area_screenshot() {
-  maim -s "$1"
-}
-
-take_window_screenshot() {
-  maim -i "$(xdotool getactivewindow)" "$1"
+take_area_or_window_screenshot() {
+  maim "$1" "${2:+-s $2}"  # Combine area and window screenshot functions
 }
 
 create_directory() {
@@ -63,13 +59,10 @@ viewnior_prompt() {
 
 case $selected_option in
 " Screenshot Now Full" | " Screenshot In 5 Second" | " Screenshot In 10 Second")
-  countdown "${selected_option: -1}" && sleep 2 && take_screenshot "$temp_file" && convert_image "$temp_file" "$file" && notify "Screenshot taken after ${selected_option: -1} seconds."
+  countdown "${selected_option: -1}" && sleep 1 && take_screenshot "$temp_file" && convert_image "$temp_file" "$file" && notify "Screenshot taken after ${selected_option: -1} seconds."
   ;;
-" Screenshot Window")
-  take_window_screenshot "$temp_file" && sleep 2 && convert_image "$temp_file" "$file" && notify "Window screenshot taken."
-  ;;
-" Screenshot Area")
-  take_area_screenshot "$temp_file" && sleep 2 && convert_image "$temp_file" "$file" && notify "Area screenshot taken."
+" Screenshot Window" | " Screenshot Area")
+  take_area_or_window_screenshot "$temp_file" "${selected_option: -1}" && sleep 1 && convert_image "$temp_file" "$file" && notify "${selected_option: -1} screenshot taken."
   ;;
 *)
   exit 1
