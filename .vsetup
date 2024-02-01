@@ -31,7 +31,7 @@ run pipewire &
 run nm-applet &
 run xfsettingsd &
 run blueman-applet &
-run xfce4-power-manager &
+run powertop --auto-tune &
 run xsetroot -cursor_name left_ptr &
 run picom --config "$DIR/picom.conf" --daemon &
 run xsettingsd --config="$DIR/xsettingsd/xsettingsd.conf"
