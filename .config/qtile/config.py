@@ -81,13 +81,13 @@ keys = [
     Key(
         [],
         "XF86MonBrightnessUp",
-        lazy.spawn("control brightness 1+"),
+        lazy.spawn("control brightness 10+"),
         desc="Brightness Up",
     ),
     Key(
         [],
         "XF86MonBrightnessDown",
-        lazy.spawn("control brightness 1-"),
+        lazy.spawn("control brightness 10-"),
         desc="Brightness Down",
     ),
     Key([mod], "e", lazy.spawn("thunar"), desc="File manager"),
