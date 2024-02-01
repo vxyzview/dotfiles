@@ -4,15 +4,19 @@
 # Email: xealea@xedev.my.id
 # Copyright © 2023 Lea <xealea@proton.me>
 
+# Configuration
+NOTIFY_ICON="" # Use Nerd Fonts icon for notifications
+TIMER_ICON=""  # Use Nerd Fonts icon for timer
+
 # Functions
 notify() {
-  notify-send -i "$HOME/.notify/images/ss.png" "$1"
+  dunstify -u low -i "$NOTIFY_ICON" "$1"
 }
 
 countdown() {
   for ((sec = $1; sec > 0; sec--)); do
     notify "Taking shot in: $sec $TIMER_ICON"
-    sleep 0.5  # Adjusted sleep time for faster countdown
+    sleep 1
   done
 }
 
@@ -24,8 +28,12 @@ take_screenshot() {
   maim -u -f png "$1"
 }
 
-take_area_or_window_screenshot() {
-  maim "$1" "${2:+-s $2}"  # Combine area and window screenshot functions
+take_area_screenshot() {
+  maim -s "$1"
+}
+
+take_window_screenshot() {
+  maim -i "$(xdotool getactivewindow)" "$1"
 }
 
 create_directory() {
@@ -55,10 +63,13 @@ viewnior_prompt() {
 
 case $selected_option in
 " Screenshot Now Full" | " Screenshot In 5 Second" | " Screenshot In 10 Second")
-  countdown "${selected_option: -1}" && sleep 1 && take_screenshot "$temp_file" && convert_image "$temp_file" "$file" && notify "Screenshot taken after ${selected_option: -1} seconds."
+  countdown "${selected_option: -1}" && sleep 2 && take_screenshot "$temp_file" && convert_image "$temp_file" "$file" && notify "Screenshot taken after ${selected_option: -1} seconds."
   ;;
-" Screenshot Window" | " Screenshot Area")
-  take_area_or_window_screenshot "$temp_file" "${selected_option: -1}" && sleep 1 && convert_image "$temp_file" "$file" && notify "${selected_option: -1} screenshot taken."
+" Screenshot Window")
+  take_window_screenshot "$temp_file" && sleep 2 && convert_image "$temp_file" "$file" && notify "Window screenshot taken."
+  ;;
+" Screenshot Area")
+  take_area_screenshot "$temp_file" && sleep 2 && convert_image "$temp_file" "$file" && notify "Area screenshot taken."
   ;;
 *)
   exit 1
