@@ -1,14 +1,14 @@
 #### Installasion
 ```bash
-wget https://bit.ly/pyranixdot
+wget https://bit.ly/pyranixdot | bash
 ```
 #### Setup Audio
-> ( Only Voidlinux ), no need if your audio already work
+> ( Only For Voidlinux ), no need if your audio already work
 ```bash
-wget https://bit.ly/pyranixaudio
+wget https://bit.ly/pyranixaudio | bash
 ```
 #### Setup Package Full
 > ( Optional, *Only For Archlinux*, May Broke Some Package )
 ```bash
-wget https://bit.ly/pyranixfullarch
+wget https://bit.ly/pyranixfullarch | bash
 ```
