@@ -1,9 +1,9 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # shellcheck disable=SC2199
 # shellcheck disable=SC2086
 # shellcheck source=/dev/null
 #
-# Copyright (C) 2023-02 xealea <xealea@proton.me>
+# Copyright (C) 2024-02 pyranix <pyranix@proton.me>
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
