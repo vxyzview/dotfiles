@@ -18,37 +18,10 @@
 # limitations under the License.
 set -e
 
-# Customizable paths
-CONFIG_DIR="$HOME/.config"
+# Define the theme, wallpaper, and Qtile folder paths
 QTHEME_DIR="$HOME/.qtheme"
 WALLPAPER_DIR="$HOME/.wallpaper"
-LOG_FILE="$HOME/.theme_script_log"
-
-# Function to log messages
-log() {
-    echo "$(date): $1" >> "$LOG_FILE"
-}
-
-# Function to handle errors
-handle_error() {
-    local error_message="$1"
-    notify-send -u low "Error: $error_message"
-    exit 1
-}
-
-# Function to ask for confirmation
-confirm() {
-    read -p "Are you sure you want to apply the '$selected_theme' theme? (y/n): " answer
-    case "$answer" in
-        [Yy]*)
-            apply_theme "$selected_theme"
-            ;;
-        *)
-            notify-send -u low "Theme application canceled."
-            exit 0
-            ;;
-    esac
-}
+QTILE_CONFIG_DIR="$HOME/.config/qtile"
 
 # Function to select a theme
 select_theme() {
@@ -56,7 +29,7 @@ select_theme() {
     selected_theme=$(echo "$theme_list" | rofi -dmenu -p "Select Theme:")
     
     if [ -n "$selected_theme" ]; then
-        confirm
+        apply_theme "$selected_theme"
     else
         notify-send -u low "No theme selected. Exiting..."
         exit 1
@@ -67,10 +40,13 @@ select_theme() {
 apply_theme() {
     local selected_theme="$1"
     SRC_PATH="$QTHEME_DIR/$selected_theme"
-    DEST_PATH="$CONFIG_DIR/qtile"
-
+    DEST_PATH="$HOME/.config/"
+    
     # Check if the theme directory exists
-    [ ! -d "$SRC_PATH" ] && handle_error "Theme directory not found: $SRC_PATH"
+    if [ ! -d "$SRC_PATH" ]; then
+        notify-send -u low "Error: Theme directory '$SRC_PATH' not found."
+        exit 1
+    fi
 
     # Copy the selected theme to the destination
     cp -r "$SRC_PATH/"* "$DEST_PATH"
@@ -108,7 +84,7 @@ select_wallpaper() {
     if [ -n "$selected_wallpaper" ]; then
         # Set the selected wallpaper
         feh --bg-fill "$WALLPAPER_DIR/$selected_wallpaper"
-        notify-send -u low -t 3000 -a "Theme Script" "Wallpaper '$selected_wallpaper' set successfully!" -i dialog-information
+        notify-send -u low "Wallpaper '$selected_wallpaper' set successfully!"
     else
         notify-send -u low "No wallpaper selected. Using the default wallpaper."
     fi
@@ -136,11 +112,15 @@ restart_qtile() {
 
 # Check if Rofi, Feh, or Qtile are installed
 if ! command -v rofi &> /dev/null || ! command -v feh &> /dev/null || ! command -v qtile &> /dev/null; then
-    handle_error "Rofi, feh, or qtile not found. Please install the required tools."
+    notify-send -u low "Error: Rofi, feh, or qtile not found. Please install the required tools."
+    exit 1
 fi
 
 # Check if the Qtile config directory exists
-[ ! -d "$CONFIG_DIR/qtile" ] && handle_error "Qtile config directory not found: $CONFIG_DIR/qtile"
+if [ ! -d "$QTILE_CONFIG_DIR" ]; then
+    notify-send -u low "Error: Qtile config directory not found: $QTILE_CONFIG_DIR"
+    exit 1
+fi
 
 # Start the script by selecting a theme
 select_theme
