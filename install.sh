@@ -41,7 +41,7 @@ clone_repository() {
 
 # Function to sync configuration files
 sync_config_files() {
-    rsync -a --exclude=".git*" --exclude="install.sh" --exclude="qtile.desktop" --exclude="archpackage-full.sh" --exclude="audiosetup-voidlinux.sh" --exclude="README.md" "$destination/" "$HOME"
+    rsync -a --exclude=".git*" --exclude="install.sh" --exclude=".scripts*" --exclude="README.md" "$destination/" "$HOME"
 }
 
 # Fuction for install starship shell
