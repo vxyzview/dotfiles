@@ -97,11 +97,20 @@ qtile_login_manager() {
     sudo mv "$destination/.scripts/qtile.desktop" /usr/share/xsessions/qtile.desktop
 }
 
+restart_qtile_windowman() {
+    if qtile cmd-obj -o cmd -f restart; then
+        notify-send -u low "Qtile restarted successfully."
+    else
+        notify-send -u low "Error: Unable to restart Qtile. Check the configuration and try again."
+    fi
+}
+
 # Main execution
 install_packages
 clone_repository
 sync_config_files
 starship_shell_install
+restart_qtile_windowman
 additional_configuration
 qtile_login_manager
 
