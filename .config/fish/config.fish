@@ -57,6 +57,10 @@ set -x NVIM_APPNAME "nvim"
 # Path my script
 set -x PATH "$HOME/.config/nvim/bin:$HOME/.local/bin:$PATH"
 
+# Set keyring
+eval (/usr/bin/gnome-keyring-daemon --start --components=pkcs11,secrets,ssh,gpg | psub)
+set -x SSH_AUTH_SOCK
+
 # Change title terminal
 switch $TERM
     case "xterm*" "rxvt*" "Eterm*" "aterm" "kterm" "gnome*" "alacritty" "st" "konsole*"; set -x PROMPT_COMMAND 'echo -ne "\033]0;($USER@$HOSTNAME:r):($PWD:r)\007"'
