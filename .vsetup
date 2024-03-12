@@ -64,7 +64,7 @@ fi
 
 # Run processes
 run ~/.fehbg
-run pipewire
+# run pipewire
 run nm-applet
 run xfsettingsd
 run blueman-applet
