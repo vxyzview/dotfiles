@@ -58,7 +58,6 @@ set -x NVIM_APPNAME "nvim"
 set -x PATH "$HOME/.config/nvim/bin:$HOME/.local/bin:$PATH"
 
 # Set keyring
-eval (/usr/bin/gnome-keyring-daemon --start --components=pkcs11,secrets,ssh,gpg | psub)
 set -x SSH_AUTH_SOCK
 
 # Change title terminal
