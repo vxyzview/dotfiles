@@ -422,10 +422,10 @@ def set_floating(window):
         window.floating = True
 
 
-@hook.subscribe.startup_once
-def autostart():
-    home = os.path.expanduser("~")
-    subprocess.call([home + "/.vsetup"])
+# @hook.subscribe.startup_once
+# def autostart():
+#    home = os.path.expanduser("~")
+#    subprocess.call([home + "/.vsetup"])
 
 
 # Configuration
