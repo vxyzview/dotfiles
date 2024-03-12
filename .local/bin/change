@@ -18,20 +18,29 @@
 # limitations under the License.
 set -e
 
-# Define the theme, wallpaper, and Qtile folder paths
-QTHEME_DIR="$HOME/.qtheme"
+# Define the theme and wallpaper folder paths
+THEME_DIR="$HOME/.qtheme"
 WALLPAPER_DIR="$HOME/.wallpaper"
-QTILE_CONFIG_DIR="$HOME/.config/qtile"
 
 # Function to select a theme
 select_theme() {
-    theme_list=$(ls "$QTHEME_DIR")
-    selected_theme=$(echo "$theme_list" | rofi -dmenu -p "Select Theme:")
-    
-    if [ -n "$selected_theme" ]; then
-        apply_theme "$selected_theme"
+    if [ -d "$THEME_DIR" ]; then
+        theme_list=$(ls "$THEME_DIR")
+        if [ -n "$theme_list" ]; then
+            selected_theme=$(rofi -dmenu -p "Select Theme:" <<< "$theme_list")
+            
+            if [ -n "$selected_theme" ]; then
+                apply_theme "$selected_theme"
+            else
+                echo "No theme selected. Exiting..."
+                exit 1
+            fi
+        else
+            echo "Error: No themes found in '$THEME_DIR'. Exiting..."
+            exit 1
+        fi
     else
-        notify-send -u low "No theme selected. Exiting..."
+        echo "Error: Theme directory '$THEME_DIR' not found. Exiting..."
         exit 1
     fi
 }
@@ -39,54 +48,59 @@ select_theme() {
 # Function to apply the selected theme
 apply_theme() {
     local selected_theme="$1"
-    SRC_PATH="$QTHEME_DIR/$selected_theme"
+    SRC_PATH="$THEME_DIR/$selected_theme"
     DEST_PATH="$HOME/.config/"
-    
+
     # Check if the theme directory exists
     if [ ! -d "$SRC_PATH" ]; then
-        notify-send -u low "Error: Theme directory '$SRC_PATH' not found."
+        echo "Error: Theme directory '$SRC_PATH' not found."
         exit 1
     fi
 
     # Copy the selected theme to the destination
     cp -r "$SRC_PATH/"* "$DEST_PATH"
 
-    # Update the icon theme based on the selected theme
-    case $selected_theme in
-        "redrose")
-            set_gnome_settings "adw-gtk3-red" "Tela-red"
-            ;;
-        "bluerod")
-            set_gnome_settings "adw-gtk3-blue" "Tela-purple"
-            ;;
-        "nyoom")
-            set_gnome_settings "adw-gtk3-dark" "Tela-black"
-            ;;
-    esac
+    # Update GTK settings based on the selected theme
+    update_gtk_settings "$selected_theme"
 
     select_wallpaper
 }
 
-# Function to set GNOME settings for GTK and icon themes
-set_gnome_settings() {
-    local gtk_theme="$1"
-    local icon_theme="$2"
+# Function to update GTK settings based on the selected theme
+update_gtk_settings() {
+    case $1 in
+        "redrose")
+            set_gtk_settings "adw-gtk3-red" "Tela-red"
+            ;;
+        "bluerod")
+            set_gtk_settings "adw-gtk3-blue" "Tela-purple"
+            ;;
+        "nyoom")
+            set_gtk_settings "adw-gtk3-dark" "Tela-black"
+            ;;
+        *)
+            echo "Warning: Unknown theme. GTK settings not updated."
+            ;;
+    esac
+}
 
-    gsettings set org.gnome.desktop.interface gtk-theme "$gtk_theme"
-    gsettings set org.gnome.desktop.interface icon-theme "$icon_theme"
+# Function to set GTK settings
+set_gtk_settings() {
+    gsettings set org.gnome.desktop.interface gtk-theme "$1"
+    gsettings set org.gnome.desktop.interface icon-theme "$2"
 }
 
 # Function to select a wallpaper
 select_wallpaper() {
-    wallpaper_list=$(ls "$WALLPAPER_DIR")
+    wallpaper_list=$(ls "$wallpaper_dir")
     selected_wallpaper=$(echo "$wallpaper_list" | rofi -dmenu -p "Select Wallpaper:")
 
     if [ -n "$selected_wallpaper" ]; then
         # Set the selected wallpaper
-        feh --bg-fill "$WALLPAPER_DIR/$selected_wallpaper"
-        notify-send -u low "Wallpaper '$selected_wallpaper' set successfully!"
+        feh --bg-fill "$wallpaper_dir/$selected_wallpaper"
+        echo "Wallpaper '$selected_wallpaper' set successfully!"
     else
-        notify-send -u low "No wallpaper selected. Using the default wallpaper."
+        echo "No wallpaper selected. Using the default wallpaper."
     fi
 
     # Update user directories
@@ -96,33 +110,14 @@ select_wallpaper() {
     # Display user directories
     xdg-user-dir
 
-    restart_qtile
+    # Kill already running processes
+    for process in xsettingsd firefox dunst thunar ksuperkey; do
+        pidof "$process" && killall "$process"
+    done
+
+    # Restart Qtile to apply the changes
+    qtile cmd-obj -o cmd -f restart
 }
-
-# Function to restart Qtile
-restart_qtile() {
-    if qtile cmd-obj -o cmd -f restart; then
-        notify-send -u low "Qtile restarted successfully."
-    else
-        notify-send -u low "Error: Unable to restart Qtile. Check the configuration and try again."
-    fi
-}
-
-# Main script
-
-# Check if Rofi, Feh, or Qtile are installed
-if ! command -v rofi &> /dev/null || ! command -v feh &> /dev/null || ! command -v qtile &> /dev/null; then
-    notify-send -u low "Error: Rofi, feh, or qtile not found. Please install the required tools."
-    exit 1
-fi
-
-# Check if the Qtile config directory exists
-if [ ! -d "$QTILE_CONFIG_DIR" ]; then
-    notify-send -u low "Error: Qtile config directory not found: $QTILE_CONFIG_DIR"
-    exit 1
-fi
 
 # Start the script by selecting a theme
 select_theme
-
-exit 0
