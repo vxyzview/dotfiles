@@ -29,7 +29,7 @@ detect_init_system() {
   elif command -v loginctl &> /dev/null; then
     init_system="loginctl"
   else
-    notify-send -u low "Unable to detect init system. Exiting."
+    dunstify -u low "Unable to detect init system. Exiting."
     exit 1
   fi
 }
@@ -54,7 +54,7 @@ case $init_system in
     logout_command="loginctl terminate-session"
     ;;
   *)
-    notify-send -u low "Unsupported init system. Exiting."
+    dunstify -u low "Unsupported init system. Exiting."
     exit 1
     ;;
 esac
@@ -72,46 +72,46 @@ selected_option=$(printf '%s\n' "${options[@]}" | rofi -dmenu -i -p "$SCRIPT_NAM
 case $selected_option in
     " Poweroff")
         if confirm_option; then
-            notify-send -i "$HOME/.notify/images/power-button.png" "Powering off..."
+            dunstify -i "$HOME/.notify/images/power-button.png" "Powering off..."
             $power_command
         else
-            notify-send -i "$HOME/.notify/images/multiply.png" "Power off canceled"
+            dunstify -i "$HOME/.notify/images/multiply.png" "Power off canceled"
         fi
         ;;
     " Reboot")
         if confirm_option; then
-            notify-send -i "$HOME/.notify/images/refresh.png" "Rebooting..."
+            dunstify -i "$HOME/.notify/images/refresh.png" "Rebooting..."
             $reboot_command
         else
-            notify-send -i "$HOME/.notify/images/multiply.png" "Reboot canceled"
+            dunstify -i "$HOME/.notify/images/multiply.png" "Reboot canceled"
         fi
         ;;
     " Sleep")
         if confirm_option; then
-            notify-send -i "$HOME/.notify/images/sleep.png" "Putting system to sleep..."
+            dunstify -i "$HOME/.notify/images/sleep.png" "Putting system to sleep..."
             $sleep_command
         else
-            notify-send -i "$HOME/.notify/images/multiply.png" "Sleep canceled"
+            dunstify -i "$HOME/.notify/images/multiply.png" "Sleep canceled"
         fi
         ;;
     " Hibernate")
         if confirm_option; then
-            notify-send -i "$HOME/.notify/images/suspended.png" "Hibernating..."
+            dunstify -i "$HOME/.notify/images/suspended.png" "Hibernating..."
             $hibernate_command
         else
-            notify-send -i "$HOME/.notify/images/multiply.png" "Hibernation canceled"
+            dunstify -i "$HOME/.notify/images/multiply.png" "Hibernation canceled"
         fi
         ;;
     " Log Out")
         if confirm_option; then
-            notify-send -i "$HOME/.notify/images/arrow.png" "Logging out..."
+            dunstify -i "$HOME/.notify/images/arrow.png" "Logging out..."
             $logout_command
         else
-            notify-send -i "$HOME/.notify/images/multiply.png" "Log out canceled"
+            dunstify -i "$HOME/.notify/images/multiply.png" "Log out canceled"
         fi
         ;;
     *)
-        notify-send -u low "Invalid option"
+        dunstify -u low "Invalid option"
         ;;
 esac
 

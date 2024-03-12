@@ -19,7 +19,7 @@
 
 # Check if the correct number of arguments is provided
 if [ $# -lt 2 ]; then
-    notify-send -u low "Usage: $0 <gcc or clang> <source_file.cpp or source_file.c>"
+    dunstify -u low "Usage: $0 <gcc or clang> <source_file.cpp or source_file.c>"
     exit 1
 fi
 
@@ -30,7 +30,7 @@ file_base_name="${file_name%.*}"
 
 # Check if the selected compiler is either gcc or clang
 if [ "$selected_compiler" != "gcc" ] && [ "$selected_compiler" != "clang" ]; then
-    notify-send -u low "Invalid compiler choice. Please use 'gcc' or 'clang'."
+    dunstify -u low "Invalid compiler choice. Please use 'gcc' or 'clang'."
     exit 1
 fi
 
@@ -44,7 +44,7 @@ if [ "$extension" == "cpp" ]; then
     elif [ "$selected_compiler" == "clang" ]; then
         compiler="clang++"
     else
-        notify-send -u low "Unsupported file extension: $extension"
+        dunstify -u low "Unsupported file extension: $extension"
         exit 1
     fi
 elif [ "$extension" == "c" ]; then
@@ -53,11 +53,11 @@ elif [ "$extension" == "c" ]; then
     elif [ "$selected_compiler" == "clang" ]; then
         compiler="clang"
     else
-        notify-send -u low "Unsupported file extension: $extension"
+        dunstify -u low "Unsupported file extension: $extension"
         exit 1
     fi
 else
-    notify-send -u low "Unsupported file extension: $extension"
+    dunstify -u low "Unsupported file extension: $extension"
     exit 1
 fi
 
@@ -66,7 +66,7 @@ $compiler -o "$file_base_name" "$file_name"
 
 # Check if compilation was successful
 if [ $? -eq 0 ]; then
-    notify-send -u low "Compilation successful. Executable: ./$file_base_name"
+    dunstify -u low "Compilation successful. Executable: ./$file_base_name"
 else
-    notify-send -u low "Compilation failed."
+    dunstify -u low "Compilation failed."
 fi

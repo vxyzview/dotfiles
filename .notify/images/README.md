@@ -1,1 +1,1 @@
-#### The icon of dunst/notify-send place here
+#### The icon of dunst/dunstify place here

@@ -99,9 +99,9 @@ qtile_login_manager() {
 
 restart_qtile_windowman() {
     if qtile cmd-obj -o cmd -f restart; then
-        notify-send -u low "Qtile restarted successfully."
+        dunstify -u low "Qtile restarted successfully."
     else
-        notify-send -u low "Error: Unable to restart Qtile. Check the configuration and try again."
+        dunstify -u low "Error: Unable to restart Qtile. Check the configuration and try again."
     fi
 }
 
