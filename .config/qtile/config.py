@@ -10,10 +10,12 @@ from libqtile.lazy import lazy
 mod = "mod4"  # Use the Super key as the main modifier
 terminal = "alacritty"  # Use the default terminal emulator
 
+
 @hook.subscribe.startup_once
 def autostart():
     home = os.path.expanduser("~")
     subprocess.call([home + "/.setup"])
+
 
 keys = [
     # A list of available commands that can be bound to keys can be found
@@ -78,7 +80,9 @@ keys = [
     # Misc and my custom cmd
     Key([mod], "x", lazy.spawn("rofi -show drun"), desc="Spawn a command launcher"),
     Key([], "XF86AudioRaiseVolume", lazy.spawn("control volume +1"), desc="Volume Up"),
-    Key([], "XF86AudioLowerVolume", lazy.spawn("control volume -1"), desc="Volume Down"),
+    Key(
+        [], "XF86AudioLowerVolume", lazy.spawn("control volume -1"), desc="Volume Down"
+    ),
     Key([], "XF86AudioMute", lazy.spawn("control mute x"), desc="Volume Mute"),
     Key([], "XF86AudioPlay", lazy.spawn("playerctl play-pause"), desc="playerctl"),
     Key([], "XF86AudioPrev", lazy.spawn("playerctl previous"), desc="playerctl"),
@@ -154,9 +158,11 @@ widget_defaults = dict(
 )
 extension_defaults = [widget_defaults.copy()]
 
+
 # Remove Parse text
 def no_text(text):
     return ""
+
 
 # remove bar
 # screens = [ Screen() ]
@@ -182,13 +188,13 @@ screens = [
                     text=f" {launcher_icon} ",
                     fontsize=18,
                     padding=10,
-		    background="#f2f4f8",
+                    background="#42BE65",
                     foreground="#161616",
                     mouse_callbacks={
                         "Button1": lambda: qtile.cmd_spawn("rofi -show drun")
                     },
                 ),
-		widget.Spacer(
+                widget.Spacer(
                     background="#161616",
                     length=14,
                 ),
@@ -196,13 +202,13 @@ screens = [
                     background="#161616",
                     length=14,
                 ),
-		widget.GroupBox(
+                widget.GroupBox(
                     use_mouse_wheel=True,
                     highlight_method="block",
                     this_current_screen_border="#161616",
                     fontsize=20,
-                    foreground="#f2f4f8",
-                    active="#f2f4f8",
+                    foreground="#FF7EB6",
+                    active="#33B1FF",
                     margin=0,
                     margin_x=0,
                     margin_y=2,
@@ -210,74 +216,15 @@ screens = [
                     padding_x=2,
                     padding_y=6,
                 ),
-		widget.Spacer(
-		    background="#161616",
-		    length=14,
-		),
-		widget.Spacer(
-                    background="#161616",
-                    length=14,
-                ),
-		widget.Spacer(
-                    background="#161616",
-                ),
-#		widget.TaskList(
-#		    icon_size=20,
-#		    parse_text=no_text,
-#                   text_minimized="",
-#                   text_maximized="",
-#                   text_floating="",
-#		    highlight_method="block",
-#		    border="#f2f4f8",
-#		    padding=2,
-#		    padding_x=0,
-#                   padding_y=8,
-#		    margin=2,
-#		    borderwidth=10,
-#		    theme_mode="preferred",
-#		    theme_path="/home/lea/.icons/Tela-black",
-#		),
-		widget.Spacer(
-                    background="#161616",
-                ),
-                widget.TextBox(
-                    text=f" {clock_icon} ",
-                    fontsize=14,
-                    foreground="#f2f4f8"
-                ),
-                widget.Clock(
-                    format="%I:%M %p",
-                    fontsize=14,
-                    foreground="#f2f4f8"
-                ),
-		widget.TextBox(
-                    text=f" {battery_icon} ",
-                    fontsize=14,
-                    foreground="#f2f4f8",
-                    mouse_callbacks={'Button1': lambda: qtile.cmd_spawn("xfce4-power-manager-settings")}
-                ),
-                widget.Battery(
-                    battery=0,
-                    format="{percent:2.0%} -",
-                    fontsize=14,
-                    foreground="#f2f4f8",
-                    mouse_callbacks={'Button1': lambda: qtile.cmd_spawn("xfce4-power-manager-settings")}
-                ),
-                widget.Battery(
-                    battery=1,
-                    format="{percent:2.0%}",
-                    fontsize=14,
-                    foreground="#f2f4f8",
-                    mouse_callbacks={'Button1': lambda: qtile.cmd_spawn("xfce4-power-manager-settings")}
-                ),
-		widget.Spacer(
-                    background="#161616",
-                ),
-		widget.Systray(
-                    padding=10,
-                    fontsize=10,
-                ),
-		widget.Spacer(
+                # widget.CurrentLayout(
+                #    fontsize=14,
+                #    foreground="#f2f4f8"
+                # ),
+                #               widget.CurrentLayout(
+                #                   fontsize=14,
+                #                   foreground="#f2f4f8"
+                #               ),
+                widget.Spacer(
                     background="#161616",
                     length=14,
                 ),
@@ -285,13 +232,87 @@ screens = [
                     background="#161616",
                     length=14,
                 ),
-	        widget.TextBox(
-                    text=f" {powermenu_icon} ",
-	            padding=10,
+                widget.Spacer(
+                    background="#161616",
+                ),
+                # 		widget.TaskList(
+                # 		    icon_size=20,
+                # 		    parse_text=no_text,
+                #                   text_minimized="",
+                #                   text_maximized="",
+                #                   text_floating="",
+                # 		    highlight_method="block",
+                # 		    border="#f2f4f8",
+                # 		    padding=2,
+                # 		    padding_x=0,
+                #                   padding_y=8,
+                # 		    margin=2,
+                # 		    borderwidth=10,
+                # 		    theme_mode="preferred",
+                # 		    theme_path="/home/lea/.icons/Tela-black",
+                # 		),
+                widget.Spacer(
+                    background="#161616",
+                ),
+                widget.TextBox(
+                    text=f" {clock_icon} ", fontsize=14, foreground="#FF7EB6"
+                ),
+                widget.Clock(format="%I:%M %p", fontsize=14, foreground="#FF7EB6"),
+                widget.TextBox(
+                    text=f" {battery_icon} ",
                     fontsize=14,
-                    background="#f2f4f8",
+                    foreground="#FF7EB6",
+                    mouse_callbacks={
+                        "Button1": lambda: qtile.cmd_spawn(
+                            "xfce4-power-manager-settings"
+                        )
+                    },
+                ),
+                widget.Battery(
+                    battery=0,
+                    format="{percent:2.0%} -",
+                    fontsize=14,
+                    foreground="#FF7EB6",
+                    mouse_callbacks={
+                        "Button1": lambda: qtile.cmd_spawn(
+                            "xfce4-power-manager-settings"
+                        )
+                    },
+                ),
+                widget.Battery(
+                    battery=1,
+                    format="{percent:2.0%}",
+                    fontsize=14,
+                    foreground="#FF7EB6",
+                    mouse_callbacks={
+                        "Button1": lambda: qtile.cmd_spawn(
+                            "xfce4-power-manager-settings"
+                        )
+                    },
+                ),
+                widget.Spacer(
+                    background="#161616",
+                ),
+                widget.Systray(
+                    padding=10,
+                    fontsize=10,
+		    foreground="#161616",
+                ),
+                widget.Spacer(
+                    background="#161616",
+                    length=14,
+                ),
+                widget.Spacer(
+                    background="#161616",
+                    length=14,
+                ),
+                widget.TextBox(
+                    text=f" {powermenu_icon} ",
+                    padding=10,
+                    fontsize=14,
+                    background="#42BE65",
                     foreground="#161616",
-	            mouse_callbacks={'Button1': lambda: qtile.cmd_spawn("powermenu")}
+                    mouse_callbacks={"Button1": lambda: qtile.cmd_spawn("powermenu")},
                 ),
             ],
             50,  # Set height of the bar
@@ -351,6 +372,7 @@ def set_floating(window):
         "dialog",
     ]:
         window.floating = True
+
 
 # Configuration
 focus_on_window_activation = "smart"
