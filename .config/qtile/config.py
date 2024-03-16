@@ -158,10 +158,21 @@ extension_defaults = [widget_defaults.copy()]
 def no_text(text):
     return ""
 
-# # remove bar
+# remove bar
 # screens = [ Screen() ]
 # Define the glyphs for your icons
 
+launcher_icon = ""
+cpu_icon = ""
+memory_icon = "󰍛"
+thermal_icon = ""
+# net_icon = "󰀂"
+# bluetooth_icon = ""
+# pulsevolume_icon = ""
+battery_icon = ""
+clock_icon = ""
+# capsnum_icon = ""
+powermenu_icon = "⏻"
 # Bar configuration
 screens = [
     Screen(
