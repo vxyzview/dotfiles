@@ -180,26 +180,73 @@ screens = [
             [
                 widget.TextBox(
                     text=f" {launcher_icon} ",
-                    fontsize=14,
-                    padding=5,
-                    foreground="#f2f4f8",
-                    mouse_callbacks={'Button1': lambda: qtile.cmd_spawn("dmenu_run -l 15 -c -g 3")}
+                    fontsize=18,
+                    padding=10,
+		    background="#f2f4f8",
+                    foreground="#161616",
+                    mouse_callbacks={
+                        "Button1": lambda: qtile.cmd_spawn("rofi -show drun")
+                    },
                 ),
-                widget.CurrentLayout(
-                    fontsize=14,
-                    foreground="#f2f4f8"
+		widget.CurrentLayout(
+                fontsize=14,
+                foreground="#f2f4f8"
+                ),
+                #               widget.CurrentLayout(
+                #                   fontsize=14,
+                #                   foreground="#f2f4f8"
+                #               ),
+		widget.Spacer(
+		    background="#161616",
+		    length=14,
+		),
+		widget.Spacer(
+                    background="#161616",
+                    length=14,
                 ),
                 widget.GroupBox(
-                    highlight_method='block',
-                    this_current_screen_border='#161616',
-                    fontsize=14,
+		    use_mouse_wheel=True,
+                    highlight_method="block",
+                    this_current_screen_border="#161616",
+                    fontsize=20,
                     foreground="#f2f4f8",
-                    active="bdc2be"
+                    active="#f2f4f8",
+                    margin=0,
+                    margin_x=0,
+                    margin_y=2,
+		    padding=0,
+                    padding_x=2,
+                    padding_y=6,
                 ),
-                widget.WindowName(
-                    fontsize=14,
-                    foreground="#f2f4f8"
+		widget.Spacer(
+                    background="#161616",
+                    length=14,
                 ),
+		widget.Spacer(
+                    background="#161616",
+                    length=7,
+                ),
+		widget.Sep(
+		    foreground="#f2f4f8",
+		    linewidth=2,
+		    size_percent=35,
+		),
+		widget.TaskList(
+		    icon_size=20,
+		    parse_text=no_text,
+                    text_minimized="",
+                    text_maximized="",
+                    text_floating="",
+		    highlight_method="block",
+		    border="#f2f4f8",
+		    padding=2,
+		    padding_x=0,
+                    padding_y=8,
+		    margin=2,
+		    borderwidth=10,
+		    theme_mode="preferred",
+		    theme_path="/home/lea/.icons/Tela-black",
+		),
                 widget.Chord(
                     chords_colors={
                         "launch": ("#ff0000", "#ffffff"),
