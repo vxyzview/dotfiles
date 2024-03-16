@@ -10,6 +10,11 @@ from libqtile.lazy import lazy
 mod = "mod4"  # Use the Super key as the main modifier
 terminal = "alacritty"  # Use the default terminal emulator
 
+@hook.subscribe.startup_once
+def autostart():
+    home = os.path.expanduser("~")
+    subprocess.call([home + "/.setup"])
+
 keys = [
     # A list of available commands that can be bound to keys can be found
     # at https://docs.qtile.org/en/latest/manual/config/lazy.html
@@ -420,13 +425,6 @@ def set_floating(window):
         "dialog",
     ]:
         window.floating = True
-
-
-# @hook.subscribe.startup_once
-# def autostart():
-#    home = os.path.expanduser("~")
-#    subprocess.call([home + "/.vsetup"])
-
 
 # Configuration
 focus_on_window_activation = "smart"
