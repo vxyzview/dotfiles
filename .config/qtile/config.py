@@ -129,7 +129,7 @@ for i, group in enumerate(groups, 1):
 # Layouts
 def init_layout_theme():
     return {
-        "margin": 0,
+        "margin": 15,
         "border_width": 0,
     }
 
@@ -188,24 +188,16 @@ screens = [
                         "Button1": lambda: qtile.cmd_spawn("rofi -show drun")
                     },
                 ),
-		widget.CurrentLayout(
-                fontsize=14,
-                foreground="#f2f4f8"
-                ),
-                #               widget.CurrentLayout(
-                #                   fontsize=14,
-                #                   foreground="#f2f4f8"
-                #               ),
-		widget.Spacer(
-		    background="#161616",
-		    length=14,
-		),
 		widget.Spacer(
                     background="#161616",
                     length=14,
                 ),
-                widget.GroupBox(
-		    use_mouse_wheel=True,
+                widget.Spacer(
+                    background="#161616",
+                    length=14,
+                ),
+		widget.GroupBox(
+                    use_mouse_wheel=True,
                     highlight_method="block",
                     this_current_screen_border="#161616",
                     fontsize=20,
@@ -214,72 +206,39 @@ screens = [
                     margin=0,
                     margin_x=0,
                     margin_y=2,
-		    padding=0,
+                    padding=0,
                     padding_x=2,
                     padding_y=6,
                 ),
+		widget.Spacer(
+		    background="#161616",
+		    length=14,
+		),
 		widget.Spacer(
                     background="#161616",
                     length=14,
                 ),
 		widget.Spacer(
                     background="#161616",
-                    length=7,
                 ),
-		widget.Sep(
-		    foreground="#f2f4f8",
-		    linewidth=2,
-		    size_percent=35,
-		),
-		widget.TaskList(
-		    icon_size=20,
-		    parse_text=no_text,
-                    text_minimized="",
-                    text_maximized="",
-                    text_floating="",
-		    highlight_method="block",
-		    border="#f2f4f8",
-		    padding=2,
-		    padding_x=0,
-                    padding_y=8,
-		    margin=2,
-		    borderwidth=10,
-		    theme_mode="preferred",
-		    theme_path="/home/lea/.icons/Tela-black",
-		),
-                widget.Chord(
-                    chords_colors={
-                        "launch": ("#ff0000", "#ffffff"),
-                    },
-                    name_transform=lambda name: name.upper(),
-                    foreground="#f2f4f8"
-                ),
-                widget.TextBox(
-                    text=f" {cpu_icon} ",
-                    fontsize=14,
-                    foreground="#f2f4f8"
-                ),
-                widget.CPU(
-                    fontsize=14,
-                    foreground="#f2f4f8"
-                ),
-                widget.TextBox(
-                    text=f" {memory_icon} ",
-                    fontsize=14,
-                    foreground="#f2f4f8"
-                ),
-                widget.Memory(
-                    fontsize=14,
-                    foreground="#f2f4f8"
-                ),
-                widget.TextBox(
-                    text=f" {thermal_icon} ",
-                    fontsize=14,
-                    foreground="#f2f4f8"
-                ),
-                widget.ThermalSensor(
-                    fontsize=14,
-                    foreground="#f2f4f8"
+#		widget.TaskList(
+#		    icon_size=20,
+#		    parse_text=no_text,
+#                   text_minimized="",
+#                   text_maximized="",
+#                   text_floating="",
+#		    highlight_method="block",
+#		    border="#f2f4f8",
+#		    padding=2,
+#		    padding_x=0,
+#                   padding_y=8,
+#		    margin=2,
+#		    borderwidth=10,
+#		    theme_mode="preferred",
+#		    theme_path="/home/lea/.icons/Tela-black",
+#		),
+		widget.Spacer(
+                    background="#161616",
                 ),
                 widget.TextBox(
                     text=f" {clock_icon} ",
@@ -299,7 +258,7 @@ screens = [
                 ),
                 widget.Battery(
                     battery=0,
-                    format="{percent:2.0%} |",
+                    format="{percent:2.0%} -",
                     fontsize=14,
                     foreground="#f2f4f8",
                     mouse_callbacks={'Button1': lambda: qtile.cmd_spawn("xfce4-power-manager-settings")}
@@ -311,20 +270,31 @@ screens = [
                     foreground="#f2f4f8",
                     mouse_callbacks={'Button1': lambda: qtile.cmd_spawn("xfce4-power-manager-settings")}
                 ),
+		widget.Spacer(
+                    background="#161616",
+                ),
 		widget.Systray(
                     padding=10,
                     fontsize=10,
-                    foreground="#f2f4f8"
+                ),
+		widget.Spacer(
+                    background="#161616",
+                    length=14,
+                ),
+                widget.Spacer(
+                    background="#161616",
+                    length=14,
                 ),
 	        widget.TextBox(
                     text=f" {powermenu_icon} ",
 	            padding=10,
                     fontsize=14,
-                    foreground="#f2f4f8",
+                    background="#f2f4f8",
+                    foreground="#161616",
 	            mouse_callbacks={'Button1': lambda: qtile.cmd_spawn("powermenu")}
                 ),
             ],
-            43,  # Set height of the bar
+            50,  # Set height of the bar
             background="#161616",  # Set the background color
             margin=[15, 15, 0, 15],  # Set the left, top, right, and bottom margins
         ),
