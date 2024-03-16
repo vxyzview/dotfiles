@@ -1,4 +1,7 @@
-import = ["/home/lea/.config/alacritty/colors.toml", "/home/lea/.config/alacritty/fonts.toml"]
+import = [
+    "~/.config/alacritty/fonts.toml",
+    "~/.config/alacritty/colors.toml"
+]
 live_config_reload = true
 
 [cursor]
