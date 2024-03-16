@@ -42,7 +42,9 @@ keys = [
     # Grow windows. If current window is on the edge of screen and direction
     # will be to screen edge - window would shrink.
     Key([mod, "control"], "h", lazy.layout.grow_left(), desc="Grow window to the left"),
-    Key([mod, "control"], "l", lazy.layout.grow_right(), desc="Grow window to the right"),
+    Key(
+        [mod, "control"], "l", lazy.layout.grow_right(), desc="Grow window to the right"
+    ),
     Key([mod, "control"], "j", lazy.layout.grow_down(), desc="Grow window down"),
     Key([mod, "control"], "k", lazy.layout.grow_up(), desc="Grow window up"),
     Key([mod], "n", lazy.layout.normalize(), desc="Reset all window sizes"),
@@ -78,7 +80,9 @@ keys = [
     # Misc and my custom cmd
     Key([mod], "x", lazy.spawn("rofi -show drun"), desc="Spawn a command launcher"),
     Key([], "XF86AudioRaiseVolume", lazy.spawn("control volume +1"), desc="Volume Up"),
-    Key([], "XF86AudioLowerVolume", lazy.spawn("control volume -1"), desc="Volume Down"),
+    Key(
+        [], "XF86AudioLowerVolume", lazy.spawn("control volume -1"), desc="Volume Down"
+    ),
     Key([], "XF86AudioMute", lazy.spawn("control mute x"), desc="Volume Mute"),
     Key([], "XF86AudioPlay", lazy.spawn("playerctl play-pause"), desc="playerctl"),
     Key([], "XF86AudioPrev", lazy.spawn("playerctl previous"), desc="playerctl"),
@@ -184,7 +188,7 @@ screens = [
                     text=f" {launcher_icon} ",
                     fontsize=18,
                     padding=10,
-                    background="#42BE65",
+                    background="#89948D",
                     foreground="#161616",
                     mouse_callbacks={
                         "Button1": lambda: qtile.cmd_spawn("rofi -show drun")
@@ -204,7 +208,7 @@ screens = [
                     this_current_screen_border="#161616",
                     fontsize=20,
                     foreground="#FF7EB6",
-                    active="#33B1FF",
+                    active="#89948D",
                     margin=0,
                     margin_x=0,
                     margin_y=2,
@@ -251,13 +255,13 @@ screens = [
                     background="#161616",
                 ),
                 widget.TextBox(
-                    text=f" {clock_icon} ", fontsize=14, foreground="#FF7EB6"
+                    text=f" {clock_icon} ", fontsize=14, foreground="#89948D"
                 ),
-                widget.Clock(format="%I:%M %p", fontsize=14, foreground="#FF7EB6"),
+                widget.Clock(format="%I:%M %p", fontsize=14, foreground="#89948D"),
                 widget.TextBox(
                     text=f" {battery_icon} ",
                     fontsize=14,
-                    foreground="#FF7EB6",
+                    foreground="#89948D",
                     mouse_callbacks={
                         "Button1": lambda: qtile.cmd_spawn(
                             "xfce4-power-manager-settings"
@@ -268,7 +272,7 @@ screens = [
                     battery=0,
                     format="{percent:2.0%} -",
                     fontsize=14,
-                    foreground="#FF7EB6",
+                    foreground="#89948D",
                     mouse_callbacks={
                         "Button1": lambda: qtile.cmd_spawn(
                             "xfce4-power-manager-settings"
@@ -279,7 +283,7 @@ screens = [
                     battery=1,
                     format="{percent:2.0%}",
                     fontsize=14,
-                    foreground="#FF7EB6",
+                    foreground="#89948D",
                     mouse_callbacks={
                         "Button1": lambda: qtile.cmd_spawn(
                             "xfce4-power-manager-settings"
@@ -292,7 +296,6 @@ screens = [
                 widget.Systray(
                     padding=10,
                     fontsize=10,
-		    foreground="#161616",
                 ),
                 widget.Spacer(
                     background="#161616",
@@ -306,7 +309,7 @@ screens = [
                     text=f" {powermenu_icon} ",
                     padding=10,
                     fontsize=14,
-                    background="#42BE65",
+                    background="#89948D",
                     foreground="#161616",
                     mouse_callbacks={"Button1": lambda: qtile.cmd_spawn("powermenu")},
                 ),
