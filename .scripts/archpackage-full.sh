@@ -343,22 +343,10 @@ packages=(
   vim
 
   # AUR Packages
-  betterlockscreen
-  downgrade
-  gtk3-nocsd-git
-  i3lock-color
-  ksuperkey
-  mkinitcpio-firmware
-  networkmanager-dmenu-git
-  obmenu-generator
-  perl-linux-desktopfiles
   timeshift
-  xfce-polkit
 )
 
 ## Print the unique package names
-for package in "${packages[@]}"; do
-  sudo pacman -S "$package"
-done
+sudo pacman -S --noconfirm "${packages[@]}"
 
 ## EOF ------------------------------
