@@ -310,7 +310,7 @@ screens = [
                 ),
             ],
             50,  # Set height of the bar
-            background="#161616",  # Set the background color
+            background="#100C0F",  # Set the background color
             margin=[15, 15, 0, 15],  # Set the left, top, right, and bottom margins
         ),
     ),
