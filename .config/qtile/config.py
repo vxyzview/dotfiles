@@ -193,6 +193,8 @@ powermenu_icon = "⏻"
 # Bar configuration
 screens = [
     Screen(
+        wallpaper_mode="fill", # Method of wallpaper
+        wallpaper="~/.wallpaper/casey-avellone-junglebackground.jpg", # Set wallpaper ( wayland )
         top=bar.Bar(
             [
                 widget.TextBox(
