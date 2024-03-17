@@ -10,10 +10,12 @@ from libqtile.lazy import lazy
 mod = "mod4"  # Use the Super key as the main modifier
 terminal = "alacritty"  # Use the default terminal emulator
 
+
 @hook.subscribe.startup_once
 def autostart():
     home = os.path.expanduser("~")
     subprocess.call([home + "/.setup"])
+
 
 keys = [
     # A list of available commands that can be bound to keys can be found
@@ -106,26 +108,42 @@ keys = [
 ]
 
 # Groups
-group_labels = ["", "", "", "", "", "", "", ""]
-groups = [Group(label) for label in group_labels]
+groups = []
+group_names = ["1", "2", "3", "4", "5", "6", "7", "8", "9",]
 
-for i, group in enumerate(groups, 1):
+group_labels = ["󰝥", "󰝥", "󰝥", "󰝥", "󰝥", "󰝥", "󰝥", "󰝥", "󰝥",]
+#group_labels = ["DEV", "WWW", "SYS", "DOC", "VBOX", "CHAT", "MUS", "VID", "GFX",]
+#group_labels = ["", "", "", "", "", "", "", "", "",]
+
+group_layouts = ["monadtall", "monadtall", "tile", "tile", "monadtall", "monadtall", "monadtall", "monadtall", "monadtall"]
+
+for i in range(len(group_names)):
+    groups.append(
+        Group(
+            name=group_names[i],
+            layout=group_layouts[i].lower(),
+            label=group_labels[i],
+        ))
+ 
+for i in groups:
     keys.extend(
         [
+            # mod1 + letter of group = switch to group
             Key(
                 [mod],
-                str(i),
-                lazy.group[group.name].toscreen(),
-                desc=f"Switch to group {group.name}",
+                i.name,
+                lazy.group[i.name].toscreen(),
+                desc="Switch to group {}".format(i.name),
             ),
+            # mod1 + shift + letter of group = move focused window to group
             Key(
                 [mod, "shift"],
-                str(i),
-                lazy.window.togroup(group.name, switch_group=True),
-                desc=f"Switch to & move focused window to group {group.name}",
+                i.name,
+                lazy.window.togroup(i.name, switch_group=False),
+                desc="Move focused window to group {}".format(i.name),
             ),
         ]
-    ]
+    )
 
 # Layouts
 def init_layout_theme():
@@ -155,24 +173,22 @@ widget_defaults = dict(
 )
 extension_defaults = [widget_defaults.copy()]
 
+
 # Remove Parse text
 def no_text(text):
     return ""
+
 
 # remove bar
 # screens = [ Screen() ]
 # Define the glyphs for your icons
 
 launcher_icon = ""
-cpu_icon = ""
-memory_icon = "󰍛"
-thermal_icon = ""
 # net_icon = "󰀂"
 # bluetooth_icon = ""
 # pulsevolume_icon = ""
 battery_icon = ""
-clock_icon = ""
-# capsnum_icon = ""
+clock_icon = "󰥔"
 powermenu_icon = "⏻"
 # Bar configuration
 screens = [
@@ -183,27 +199,28 @@ screens = [
                     text=f" {launcher_icon} ",
                     fontsize=18,
                     padding=10,
-                    background="#6E2836",
-                    foreground="#100C0F",
+                    background="#100C0F",
+                    foreground="#D73C58",
                     mouse_callbacks={
                         "Button1": lambda: qtile.cmd_spawn("rofi -show drun")
                     },
                 ),
-                widget.Spacer(
-                    background="#100C0F",
-                    length=14,
+                widget.Mpd2(
+                    status_format='{play_status} {artist}/{title}',
+                    foreground="#D73C58",
+                    padding=10,
+                    port=6600,
                 ),
                 widget.Spacer(
                     background="#100C0F",
-                    length=14,
                 ),
                 widget.GroupBox(
                     use_mouse_wheel=True,
                     highlight_method="block",
                     this_current_screen_border="#100C0F",
                     fontsize=20,
-                    foreground="#c1a9ac",
-                    active="#6E2836",
+                    foreground="#100C0F",
+                    active="#D73C58",
                     margin=0,
                     margin_x=0,
                     margin_y=2,
@@ -211,52 +228,17 @@ screens = [
                     padding_x=2,
                     padding_y=6,
                 ),
-                # widget.CurrentLayout(
-                #    fontsize=14,
-                #    foreground="#f2f4f8"
-                # ),
-                #               widget.CurrentLayout(
-                #                   fontsize=14,
-                #                   foreground="#f2f4f8"
-                #               ),
-                widget.Spacer(
-                    background="#100C0F",
-                    length=14,
-                ),
-                widget.Spacer(
-                    background="#100C0F",
-                    length=14,
-                ),
-                widget.Spacer(
-                    background="#100C0F",
-                ),
-                # 		widget.TaskList(
-                # 		    icon_size=20,
-                # 		    parse_text=no_text,
-                #                   text_minimized="",
-                #                   text_maximized="",
-                #                   text_floating="",
-                # 		    highlight_method="block",
-                # 		    border="#f2f4f8",
-                # 		    padding=2,
-                # 		    padding_x=0,
-                #                   padding_y=8,
-                # 		    margin=2,
-                # 		    borderwidth=10,
-                # 		    theme_mode="preferred",
-                # 		    theme_path="/home/lea/.icons/Tela-black",
-                # 		),
                 widget.Spacer(
                     background="#100C0F",
                 ),
                 widget.TextBox(
-                    text=f" {clock_icon} ", fontsize=14, foreground="#6E2836"
+                    text=f" {clock_icon} ", fontsize=14, foreground="#D73C58"
                 ),
-                widget.Clock(format="%I:%M %p", fontsize=14, foreground="#6E2836"),
+                widget.Clock(format="%I:%M %p", fontsize=14, padding=10, foreground="#D73C58"),
                 widget.TextBox(
                     text=f" {battery_icon} ",
                     fontsize=14,
-                    foreground="#6E2836",
+                    foreground="#D73C58",
                     mouse_callbacks={
                         "Button1": lambda: qtile.cmd_spawn(
                             "xfce4-power-manager-settings"
@@ -267,7 +249,7 @@ screens = [
                     battery=0,
                     format="{percent:2.0%} -",
                     fontsize=14,
-                    foreground="#6E2836",
+                    foreground="#D73C58",
                     mouse_callbacks={
                         "Button1": lambda: qtile.cmd_spawn(
                             "xfce4-power-manager-settings"
@@ -277,35 +259,26 @@ screens = [
                 widget.Battery(
                     battery=1,
                     format="{percent:2.0%}",
+                    padding=10,
                     fontsize=14,
-                    foreground="#6E2836",
+                    foreground="#D73C58",
                     mouse_callbacks={
                         "Button1": lambda: qtile.cmd_spawn(
                             "xfce4-power-manager-settings"
                         )
                     },
                 ),
-                widget.Spacer(
-                    background="#100C0F",
-                ),
                 widget.Systray(
                     padding=10,
                     fontsize=10,
-                ),
-                widget.Spacer(
-                    background="#100C0F",
-                    length=14,
-                ),
-                widget.Spacer(
-                    background="#100C0F",
-                    length=14,
+                    foreground="#D73C58",
                 ),
                 widget.TextBox(
                     text=f" {powermenu_icon} ",
                     padding=10,
                     fontsize=14,
-                    background="#6E2836",
-                    foreground="#100C0F",
+                    background="#100C0F",
+                    foreground="#D73C58",
                     mouse_callbacks={"Button1": lambda: qtile.cmd_spawn("powermenu")},
                 ),
             ],
