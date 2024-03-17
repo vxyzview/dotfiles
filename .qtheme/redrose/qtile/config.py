@@ -209,7 +209,10 @@ screens = [
                     status_format='{play_status} {artist}/{title}',
                     foreground="#D73C58",
                     padding=10,
-                    port=6600,
+                    host='localhost',
+                    port='6600',
+                    idle_message='Not any music playing ',
+                    idle_format='{play_status} {idle_message}[{repeat}{random}{single}{consume}{updating_db}]',
                 ),
                 widget.Spacer(
                     background="#100C0F",
