@@ -98,11 +98,7 @@ qtile_login_manager() {
 }
 
 restart_qtile_windowman() {
-    if qtile cmd-obj -o cmd -f restart; then
-        dunstify -u low "Qtile restarted successfully."
-    else
-        dunstify -u low "Error: Unable to restart Qtile. Check the configuration and try again."
-    fi
+    qtile cmd-obj -o cmd -f restart
 }
 
 # Main execution
