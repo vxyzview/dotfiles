@@ -108,32 +108,47 @@ keys = [
 ]
 
 # Groups
-group_labels = ["", "", "", "", "", "", "", ""]
-groups = [Group(label) for label in group_labels]
+groups = []
+group_names = ["1", "2", "3", "4", "5", "6", "7", "8", "9",]
 
-for i, group in enumerate(groups, 1):
+group_labels = ["󰝥", "󰝥", "󰝥", "󰝥", "󰝥", "󰝥", "󰝥", "󰝥", "󰝥",]
+#group_labels = ["DEV", "WWW", "SYS", "DOC", "VBOX", "CHAT", "MUS", "VID", "GFX",]
+#group_labels = ["", "", "", "", "", "", "", "", "",]
+
+group_layouts = ["monadtall", "monadtall", "tile", "tile", "monadtall", "monadtall", "monadtall", "monadtall", "monadtall"]
+
+for i in range(len(group_names)):
+    groups.append(
+        Group(
+            name=group_names[i],
+            layout=group_layouts[i].lower(),
+            label=group_labels[i],
+        ))
+ 
+for i in groups:
     keys.extend(
         [
+            # mod1 + letter of group = switch to group
             Key(
                 [mod],
-                str(i),
-                lazy.group[group.name].toscreen(),
-                desc=f"Switch to group {group.name}",
+                i.name,
+                lazy.group[i.name].toscreen(),
+                desc="Switch to group {}".format(i.name),
             ),
+            # mod1 + shift + letter of group = move focused window to group
             Key(
                 [mod, "shift"],
-                str(i),
-                lazy.window.togroup(group.name, switch_group=True),
-                desc=f"Switch to & move focused window to group {group.name}",
+                i.name,
+                lazy.window.togroup(i.name, switch_group=False),
+                desc="Move focused window to group {}".format(i.name),
             ),
         ]
     )
 
-
 # Layouts
 def init_layout_theme():
     return {
-        "margin": 15,
+        "margin": 10,
         "border_width": 0,
     }
 
@@ -169,15 +184,11 @@ def no_text(text):
 # Define the glyphs for your icons
 
 launcher_icon = ""
-cpu_icon = ""
-memory_icon = "󰍛"
-thermal_icon = ""
 # net_icon = "󰀂"
 # bluetooth_icon = ""
 # pulsevolume_icon = ""
 battery_icon = ""
-clock_icon = ""
-# capsnum_icon = ""
+clock_icon = "󰥔"
 powermenu_icon = "⏻"
 # Bar configuration
 screens = [
@@ -188,26 +199,30 @@ screens = [
                     text=f" {launcher_icon} ",
                     fontsize=18,
                     padding=10,
-                    background="#89948D",
-                    foreground="#161616",
+                    background="#161616",
+                    foreground="#89948D",
                     mouse_callbacks={
                         "Button1": lambda: qtile.cmd_spawn("rofi -show drun")
                     },
                 ),
-                widget.Spacer(
-                    background="#161616",
-                    length=14,
+                widget.Mpd2(
+                    status_format='{play_status} {artist}/{title}',
+                    foreground="#89948D",
+                    padding=10,
+                    host='localhost',
+                    port='6600',
+                    idle_message='Not any music playing ',
+                    idle_format='{play_status} {idle_message}[{repeat}{random}{single}{consume}{updating_db}]',
                 ),
                 widget.Spacer(
                     background="#161616",
-                    length=14,
                 ),
                 widget.GroupBox(
                     use_mouse_wheel=True,
                     highlight_method="block",
                     this_current_screen_border="#161616",
                     fontsize=20,
-                    foreground="#FF7EB6",
+                    foreground="#161616",
                     active="#89948D",
                     margin=0,
                     margin_x=0,
@@ -216,48 +231,13 @@ screens = [
                     padding_x=2,
                     padding_y=6,
                 ),
-                # widget.CurrentLayout(
-                #    fontsize=14,
-                #    foreground="#f2f4f8"
-                # ),
-                #               widget.CurrentLayout(
-                #                   fontsize=14,
-                #                   foreground="#f2f4f8"
-                #               ),
-                widget.Spacer(
-                    background="#161616",
-                    length=14,
-                ),
-                widget.Spacer(
-                    background="#161616",
-                    length=14,
-                ),
-                widget.Spacer(
-                    background="#161616",
-                ),
-                # 		widget.TaskList(
-                # 		    icon_size=20,
-                # 		    parse_text=no_text,
-                #                   text_minimized="",
-                #                   text_maximized="",
-                #                   text_floating="",
-                # 		    highlight_method="block",
-                # 		    border="#f2f4f8",
-                # 		    padding=2,
-                # 		    padding_x=0,
-                #                   padding_y=8,
-                # 		    margin=2,
-                # 		    borderwidth=10,
-                # 		    theme_mode="preferred",
-                # 		    theme_path="/home/lea/.icons/Tela-black",
-                # 		),
                 widget.Spacer(
                     background="#161616",
                 ),
                 widget.TextBox(
                     text=f" {clock_icon} ", fontsize=14, foreground="#89948D"
                 ),
-                widget.Clock(format="%I:%M %p", fontsize=14, foreground="#89948D"),
+                widget.Clock(format="%I:%M %p", fontsize=14, padding=10, foreground="#89948D"),
                 widget.TextBox(
                     text=f" {battery_icon} ",
                     fontsize=14,
@@ -282,6 +262,7 @@ screens = [
                 widget.Battery(
                     battery=1,
                     format="{percent:2.0%}",
+                    padding=10,
                     fontsize=14,
                     foreground="#89948D",
                     mouse_callbacks={
@@ -290,33 +271,23 @@ screens = [
                         )
                     },
                 ),
-                widget.Spacer(
-                    background="#161616",
-                ),
                 widget.Systray(
                     padding=10,
                     fontsize=10,
-                ),
-                widget.Spacer(
-                    background="#161616",
-                    length=14,
-                ),
-                widget.Spacer(
-                    background="#161616",
-                    length=14,
+                    foreground="#89948D",
                 ),
                 widget.TextBox(
                     text=f" {powermenu_icon} ",
                     padding=10,
                     fontsize=14,
-                    background="#89948D",
-                    foreground="#161616",
+                    background="#161616",
+                    foreground="#89948D",
                     mouse_callbacks={"Button1": lambda: qtile.cmd_spawn("powermenu")},
                 ),
             ],
             50,  # Set height of the bar
             background="#161616",  # Set the background color
-            margin=[15, 15, 0, 15],  # Set the left, top, right, and bottom margins
+            margin=[0, 0, 0, 0],  # Set the left, top, right, and bottom margins
         ),
     ),
 ]
