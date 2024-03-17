@@ -10,10 +10,12 @@ from libqtile.lazy import lazy
 mod = "mod4"  # Use the Super key as the main modifier
 terminal = "alacritty"  # Use the default terminal emulator
 
+
 @hook.subscribe.startup_once
 def autostart():
     home = os.path.expanduser("~")
     subprocess.call([home + "/.setup"])
+
 
 keys = [
     # A list of available commands that can be bound to keys can be found
@@ -106,33 +108,50 @@ keys = [
 ]
 
 # Groups
-group_labels = ["", "", "", "", "", "", "", ""]
-groups = [Group(label) for label in group_labels]
+groups = []
+group_names = ["1", "2", "3", "4", "5", "6", "7", "8", "9",]
 
-for i, group in enumerate(groups, 1):
+group_labels = ["󰝥", "󰝥", "󰝥", "󰝥", "󰝥", "󰝥", "󰝥", "󰝥", "󰝥",]
+#group_labels = ["DEV", "WWW", "SYS", "DOC", "VBOX", "CHAT", "MUS", "VID", "GFX",]
+#group_labels = ["", "", "", "", "", "", "", "", "",]
+
+group_layouts = ["monadtall", "monadtall", "tile", "tile", "monadtall", "monadtall", "monadtall", "monadtall", "monadtall"]
+
+for i in range(len(group_names)):
+    groups.append(
+        Group(
+            name=group_names[i],
+            layout=group_layouts[i].lower(),
+            label=group_labels[i],
+        ))
+ 
+for i in groups:
     keys.extend(
         [
+            # mod1 + letter of group = switch to group
             Key(
                 [mod],
-                str(i),
-                lazy.group[group.name].toscreen(),
-                desc=f"Switch to group {group.name}",
+                i.name,
+                lazy.group[i.name].toscreen(),
+                desc="Switch to group {}".format(i.name),
             ),
+            # mod1 + shift + letter of group = move focused window to group
             Key(
                 [mod, "shift"],
-                str(i),
-                lazy.window.togroup(group.name, switch_group=True),
-                desc=f"Switch to & move focused window to group {group.name}",
+                i.name,
+                lazy.window.togroup(i.name, switch_group=False),
+                desc="Move focused window to group {}".format(i.name),
             ),
         ]
-    ]
+    )
 
 # Layouts
 def init_layout_theme():
     return {
-        "margin": 15,
+        "margin": 10,
         "border_width": 0,
     }
+
 
 layout_theme = init_layout_theme()
 
@@ -154,24 +173,22 @@ widget_defaults = dict(
 )
 extension_defaults = [widget_defaults.copy()]
 
+
 # Remove Parse text
 def no_text(text):
     return ""
+
 
 # remove bar
 # screens = [ Screen() ]
 # Define the glyphs for your icons
 
 launcher_icon = ""
-cpu_icon = ""
-memory_icon = "󰍛"
-thermal_icon = ""
 # net_icon = "󰀂"
 # bluetooth_icon = ""
 # pulsevolume_icon = ""
 battery_icon = ""
-clock_icon = ""
-# capsnum_icon = ""
+clock_icon = "󰥔"
 powermenu_icon = "⏻"
 # Bar configuration
 screens = [
@@ -182,26 +199,30 @@ screens = [
                     text=f" {launcher_icon} ",
                     fontsize=18,
                     padding=10,
-                    background="#d8d1db",
-                    foreground="#090810",
+                    background="#090810",
+                    foreground="#d8d1db",
                     mouse_callbacks={
                         "Button1": lambda: qtile.cmd_spawn("rofi -show drun")
                     },
                 ),
-                widget.Spacer(
-                    background="#090810",
-                    length=14,
+                widget.Mpd2(
+                    status_format='{play_status} {artist}/{title}',
+                    foreground="#d8d1db",
+                    padding=10,
+                    host='localhost',
+                    port='6600',
+                    idle_message='Not any music playing ',
+                    idle_format='{play_status} {idle_message}[{repeat}{random}{single}{consume}{updating_db}]',
                 ),
                 widget.Spacer(
                     background="#090810",
-                    length=14,
                 ),
                 widget.GroupBox(
                     use_mouse_wheel=True,
                     highlight_method="block",
                     this_current_screen_border="#090810",
                     fontsize=20,
-                    foreground="#c1a9ac",
+                    foreground="#090810",
                     active="#d8d1db",
                     margin=0,
                     margin_x=0,
@@ -210,48 +231,13 @@ screens = [
                     padding_x=2,
                     padding_y=6,
                 ),
-                # widget.CurrentLayout(
-                #    fontsize=14,
-                #    foreground="#f2f4f8"
-                # ),
-                #               widget.CurrentLayout(
-                #                   fontsize=14,
-                #                   foreground="#f2f4f8"
-                #               ),
-                widget.Spacer(
-                    background="#090810",
-                    length=14,
-                ),
-                widget.Spacer(
-                    background="#090810",
-                    length=14,
-                ),
-                widget.Spacer(
-                    background="#090810",
-                ),
-                # 		widget.TaskList(
-                # 		    icon_size=20,
-                # 		    parse_text=no_text,
-                #                   text_minimized="",
-                #                   text_maximized="",
-                #                   text_floating="",
-                # 		    highlight_method="block",
-                # 		    border="#f2f4f8",
-                # 		    padding=2,
-                # 		    padding_x=0,
-                #                   padding_y=8,
-                # 		    margin=2,
-                # 		    borderwidth=10,
-                # 		    theme_mode="preferred",
-                # 		    theme_path="/home/lea/.icons/Tela-black",
-                # 		),
                 widget.Spacer(
                     background="#090810",
                 ),
                 widget.TextBox(
-                    text=f" {clock_icon} ", fontsize=14, foreground="#6E2836"
+                    text=f" {clock_icon} ", fontsize=14, foreground="#d8d1db"
                 ),
-                widget.Clock(format="%I:%M %p", fontsize=14, foreground="#6E2836"),
+                widget.Clock(format="%I:%M %p", fontsize=14, padding=10, foreground="#d8d1db"),
                 widget.TextBox(
                     text=f" {battery_icon} ",
                     fontsize=14,
@@ -276,6 +262,7 @@ screens = [
                 widget.Battery(
                     battery=1,
                     format="{percent:2.0%}",
+                    padding=10,
                     fontsize=14,
                     foreground="#d8d1db",
                     mouse_callbacks={
@@ -284,33 +271,23 @@ screens = [
                         )
                     },
                 ),
-                widget.Spacer(
-                    background="#090810",
-                ),
                 widget.Systray(
                     padding=10,
                     fontsize=10,
-                ),
-                widget.Spacer(
-                    background="#090810",
-                    length=14,
-                ),
-                widget.Spacer(
-                    background="#090810",
-                    length=14,
+                    foreground="#d8d1db",
                 ),
                 widget.TextBox(
                     text=f" {powermenu_icon} ",
                     padding=10,
                     fontsize=14,
-                    background="#d8d1db",
-                    foreground="#090810",
+                    background="#090810",
+                    foreground="#d8d1db",
                     mouse_callbacks={"Button1": lambda: qtile.cmd_spawn("powermenu")},
                 ),
             ],
             50,  # Set height of the bar
             background="#090810",  # Set the background color
-            margin=[15, 15, 0, 15],  # Set the left, top, right, and bottom margins
+            margin=[0, 0, 0, 0],  # Set the left, top, right, and bottom margins
         ),
     ),
 ]
@@ -355,6 +332,7 @@ floating_layout = layout.Floating(
     border_width=0,
 )
 
+
 @hook.subscribe.client_new
 def set_floating(window):
     if window.window.get_wm_transient_for() or window.window.get_wm_type() in [
@@ -364,6 +342,7 @@ def set_floating(window):
         "dialog",
     ]:
         window.floating = True
+
 
 # Configuration
 focus_on_window_activation = "smart"
