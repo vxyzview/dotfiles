@@ -10,10 +10,12 @@ from libqtile.lazy import lazy
 mod = "mod4"  # Use the Super key as the main modifier
 terminal = "alacritty"  # Use the default terminal emulator
 
+
 @hook.subscribe.startup_once
 def autostart():
     home = os.path.expanduser("~")
     subprocess.call([home + "/.setup"])
+
 
 keys = [
     # A list of available commands that can be bound to keys can be found
@@ -78,7 +80,9 @@ keys = [
     # Misc and my custom cmd
     Key([mod], "x", lazy.spawn("rofi -show drun"), desc="Spawn a command launcher"),
     Key([], "XF86AudioRaiseVolume", lazy.spawn("control volume +1"), desc="Volume Up"),
-    Key([], "XF86AudioLowerVolume", lazy.spawn("control volume -1"), desc="Volume Down"),
+    Key(
+        [], "XF86AudioLowerVolume", lazy.spawn("control volume -1"), desc="Volume Down"
+    ),
     Key([], "XF86AudioMute", lazy.spawn("control mute x"), desc="Volume Mute"),
     Key([], "XF86AudioPlay", lazy.spawn("playerctl play-pause"), desc="playerctl"),
     Key([], "XF86AudioPrev", lazy.spawn("playerctl previous"), desc="playerctl"),
@@ -104,32 +108,47 @@ keys = [
 ]
 
 # Groups
-group_labels = ["", "", "", "", "", "", "", ""]
-groups = [Group(label) for label in group_labels]
+groups = []
+group_names = ["1", "2", "3", "4", "5", "6", "7", "8", "9",]
 
-for i, group in enumerate(groups, 1):
+group_labels = ["󰝥", "󰝥", "󰝥", "󰝥", "󰝥", "󰝥", "󰝥", "󰝥", "󰝥",]
+#group_labels = ["DEV", "WWW", "SYS", "DOC", "VBOX", "CHAT", "MUS", "VID", "GFX",]
+#group_labels = ["", "", "", "", "", "", "", "", "",]
+
+group_layouts = ["monadtall", "monadtall", "tile", "tile", "monadtall", "monadtall", "monadtall", "monadtall", "monadtall"]
+
+for i in range(len(group_names)):
+    groups.append(
+        Group(
+            name=group_names[i],
+            layout=group_layouts[i].lower(),
+            label=group_labels[i],
+        ))
+ 
+for i in groups:
     keys.extend(
         [
+            # mod1 + letter of group = switch to group
             Key(
                 [mod],
-                str(i),
-                lazy.group[group.name].toscreen(),
-                desc=f"Switch to group {group.name}",
+                i.name,
+                lazy.group[i.name].toscreen(),
+                desc="Switch to group {}".format(i.name),
             ),
+            # mod1 + shift + letter of group = move focused window to group
             Key(
                 [mod, "shift"],
-                str(i),
-                lazy.window.togroup(group.name, switch_group=True),
-                desc=f"Switch to & move focused window to group {group.name}",
+                i.name,
+                lazy.window.togroup(i.name, switch_group=False),
+                desc="Move focused window to group {}".format(i.name),
             ),
         ]
     )
 
-
 # Layouts
 def init_layout_theme():
     return {
-        "margin": 0,
+        "margin": 10,
         "border_width": 0,
     }
 
@@ -154,14 +173,23 @@ widget_defaults = dict(
 )
 extension_defaults = [widget_defaults.copy()]
 
+
 # Remove Parse text
 def no_text(text):
     return ""
 
-# # remove bar
+
+# remove bar
 # screens = [ Screen() ]
 # Define the glyphs for your icons
 
+launcher_icon = ""
+# net_icon = "󰀂"
+# bluetooth_icon = ""
+# pulsevolume_icon = ""
+battery_icon = ""
+clock_icon = "󰥔"
+powermenu_icon = "⏻"
 # Bar configuration
 screens = [
     Screen(
@@ -169,106 +197,97 @@ screens = [
             [
                 widget.TextBox(
                     text=f" {launcher_icon} ",
-                    fontsize=14,
-                    padding=5,
-                    foreground="#f2f4f8",
-                    mouse_callbacks={'Button1': lambda: qtile.cmd_spawn("dmenu_run -l 15 -c -g 3")}
+                    fontsize=18,
+                    padding=10,
+                    background="#161616",
+                    foreground="#89948D",
+                    mouse_callbacks={
+                        "Button1": lambda: qtile.cmd_spawn("rofi -show drun")
+                    },
                 ),
-                widget.CurrentLayout(
-                    fontsize=14,
-                    foreground="#f2f4f8"
+                widget.Mpd2(
+                    status_format='{play_status} {artist}/{title}',
+                    foreground="#89948D",
+                    padding=10,
+                    host='localhost',
+                    port='6600',
+                    idle_message='Not any music playing ',
+                    idle_format='{play_status} {idle_message}[{repeat}{random}{single}{consume}{updating_db}]',
+                ),
+                widget.Spacer(
+                    background="#161616",
                 ),
                 widget.GroupBox(
-                    highlight_method='block',
-                    this_current_screen_border='#161616',
-                    fontsize=14,
-                    foreground="#f2f4f8",
-                    active="bdc2be"
+                    use_mouse_wheel=True,
+                    highlight_method="block",
+                    this_current_screen_border="#161616",
+                    fontsize=20,
+                    foreground="#161616",
+                    active="#89948D",
+                    margin=0,
+                    margin_x=0,
+                    margin_y=2,
+                    padding=0,
+                    padding_x=2,
+                    padding_y=6,
                 ),
-                widget.WindowName(
-                    fontsize=14,
-                    foreground="#f2f4f8"
-                ),
-                widget.Chord(
-                    chords_colors={
-                        "launch": ("#ff0000", "#ffffff"),
-                    },
-                    name_transform=lambda name: name.upper(),
-                    foreground="#f2f4f8"
-                ),
-                widget.TextBox(
-                    text=f" {cpu_icon} ",
-                    fontsize=14,
-                    foreground="#f2f4f8"
-                ),
-                widget.CPU(
-                    fontsize=14,
-                    foreground="#f2f4f8"
+                widget.Spacer(
+                    background="#161616",
                 ),
                 widget.TextBox(
-                    text=f" {memory_icon} ",
-                    fontsize=14,
-                    foreground="#f2f4f8"
+                    text=f" {clock_icon} ", fontsize=14, foreground="#89948D"
                 ),
-                widget.Memory(
-                    fontsize=14,
-                    foreground="#f2f4f8"
-                ),
+                widget.Clock(format="%I:%M %p", fontsize=14, padding=10, foreground="#89948D"),
                 widget.TextBox(
-                    text=f" {thermal_icon} ",
-                    fontsize=14,
-                    foreground="#f2f4f8"
-                ),
-                widget.ThermalSensor(
-                    fontsize=14,
-                    foreground="#f2f4f8"
-                ),
-                widget.TextBox(
-                    text=f" {clock_icon} ",
-                    fontsize=14,
-                    foreground="#f2f4f8"
-                ),
-                widget.Clock(
-                    format="%I:%M %p",
-                    fontsize=14,
-                    foreground="#f2f4f8"
-                ),
-		widget.TextBox(
                     text=f" {battery_icon} ",
                     fontsize=14,
-                    foreground="#f2f4f8",
-                    mouse_callbacks={'Button1': lambda: qtile.cmd_spawn("xfce4-power-manager-settings")}
+                    foreground="#89948D",
+                    mouse_callbacks={
+                        "Button1": lambda: qtile.cmd_spawn(
+                            "xfce4-power-manager-settings"
+                        )
+                    },
                 ),
                 widget.Battery(
                     battery=0,
-                    format="{percent:2.0%} |",
+                    format="{percent:2.0%} -",
                     fontsize=14,
-                    foreground="#f2f4f8",
-                    mouse_callbacks={'Button1': lambda: qtile.cmd_spawn("xfce4-power-manager-settings")}
+                    foreground="#89948D",
+                    mouse_callbacks={
+                        "Button1": lambda: qtile.cmd_spawn(
+                            "xfce4-power-manager-settings"
+                        )
+                    },
                 ),
                 widget.Battery(
                     battery=1,
                     format="{percent:2.0%}",
+                    padding=10,
                     fontsize=14,
-                    foreground="#f2f4f8",
-                    mouse_callbacks={'Button1': lambda: qtile.cmd_spawn("xfce4-power-manager-settings")}
+                    foreground="#89948D",
+                    mouse_callbacks={
+                        "Button1": lambda: qtile.cmd_spawn(
+                            "xfce4-power-manager-settings"
+                        )
+                    },
                 ),
-		widget.Systray(
+                widget.Systray(
                     padding=10,
                     fontsize=10,
-                    foreground="#f2f4f8"
+                    foreground="#89948D",
                 ),
-	        widget.TextBox(
+                widget.TextBox(
                     text=f" {powermenu_icon} ",
-	            padding=10,
+                    padding=10,
                     fontsize=14,
-                    foreground="#f2f4f8",
-	            mouse_callbacks={'Button1': lambda: qtile.cmd_spawn("powermenu")}
+                    background="#161616",
+                    foreground="#89948D",
+                    mouse_callbacks={"Button1": lambda: qtile.cmd_spawn("powermenu")},
                 ),
             ],
-            43,  # Set height of the bar
+            50,  # Set height of the bar
             background="#161616",  # Set the background color
-            margin=[15, 15, 0, 15],  # Set the left, top, right, and bottom margins
+            margin=[0, 0, 0, 0],  # Set the left, top, right, and bottom margins
         ),
     ),
 ]
@@ -323,6 +342,7 @@ def set_floating(window):
         "dialog",
     ]:
         window.floating = True
+
 
 # Configuration
 focus_on_window_activation = "smart"
