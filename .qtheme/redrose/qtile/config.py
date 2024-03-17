@@ -148,7 +148,7 @@ for i in groups:
 # Layouts
 def init_layout_theme():
     return {
-        "margin": 5,
+        "margin": 10,
         "border_width": 0,
     }
 
