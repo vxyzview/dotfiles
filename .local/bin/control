@@ -1,7 +1,4 @@
 #!/bin/bash
-# shellcheck disable=SC2199
-# shellcheck disable=SC2086
-# shellcheck source=/dev/null
 #
 # Copyright (C) 2024-02 pyranix <pyranix@proton.me>
 #
@@ -32,13 +29,16 @@ show_notification() {
     local current_level=""
     local icon_path=""
 
-    if [ "$title" = "Brightness" ]; then
-        current_level=$(get_brightness)
-        icon_path="$ICON_PATH_BRIGHTNESS"
-    else
-        current_level=$(get_volume)
-        icon_path="$ICON_PATH_VOLUME"
-    fi
+    case "$title" in
+        "Brightness")
+            current_level=$(get_brightness)
+            icon_path="$ICON_PATH_BRIGHTNESS"
+            ;;
+        *)
+            current_level=$(get_volume)
+            icon_path="$ICON_PATH_VOLUME"
+            ;;
+    esac
 
     dunstify -u low -i "$icon_path" -r "$NOTIFY_ID" -h int:value:"$current_level" -h string:x-dunst-stacktag:"$STACK_TAG" "$title" "$message Current: $current_level"
 }
@@ -47,7 +47,11 @@ show_notification() {
 get_brightness() {
     local current_brightness=$(brightnessctl g)
     local max_brightness=$(brightnessctl m)
-    echo $(( (current_brightness * 100) / max_brightness ))
+    
+    # Calculate the brightness percentage
+    local brightness_percentage=$(( (current_brightness * 100) / max_brightness ))
+
+    echo "$brightness_percentage"
 }
 
 # Function to get current volume
@@ -78,33 +82,29 @@ toggle_mute() {
 }
 
 # Main script
-
-# Check the number of arguments
-if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
-    echo "Usage: $0 <brightness|volume|mute> [+inc|-dec|inc+|dec-|x]"
-    exit 1
-fi
-
-# Handle command line arguments
-case $1 in
-    brightness)
-        change_brightness "$2"
-        ;;
-    volume)
-        change_volume "$2"
-        ;;
-    mute)
-        if [ "$2" = "x" ]; then
-            toggle_mute
-        else
-            echo "Invalid argument for mute. Use 'x' to toggle mute/unmute."
-            exit 1
-        fi
+case "$#" in
+    2)
+        case "$1" in
+            brightness)
+                change_brightness "$2"
+                ;;
+            volume)
+                change_volume "$2"
+                ;;
+            mute)
+                toggle_mute
+                ;;
+            *)
+                echo "Unknown option: $1"
+                exit 1
+                ;;
+        esac
         ;;
     *)
-        echo "Unknown option: $1"
+        echo "Usage: $0 <brightness|volume|mute> <value>"
         exit 1
         ;;
 esac
 
 exit 0
+
