@@ -1,6 +1,6 @@
 [Desktop Entry]
 Name=Qtile
 Comment=Qtile Session
-Exec=dbus-launch qtile start
+Exec=dbus-run-session qtile start
 Type=Application
 Keywords=wm;tiling
