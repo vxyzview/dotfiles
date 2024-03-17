@@ -216,3 +216,6 @@ alias lsleep 'loginctl sleep'
 alias xrun 'sudo /opt/lampp/lampp start'
 alias xstop 'sudo /opt/lampp/lampp stop'
 alias mxampp 'sudo ./opt/lamp/manager-linux-x64.run'
+
+# Clipboard
+alias clipp 'xclip -sel clip'
