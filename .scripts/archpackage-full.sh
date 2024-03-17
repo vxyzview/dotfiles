@@ -358,7 +358,7 @@ packages=(
 
 ## Print the unique package names
 for package in "${packages[@]}"; do
-  echo "$package"
+  sudo pacman -S "$package"
 done
 
 ## EOF ------------------------------
