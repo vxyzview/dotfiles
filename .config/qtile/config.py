@@ -199,15 +199,15 @@ screens = [
                     text=f" {launcher_icon} ",
                     fontsize=18,
                     padding=10,
-                    background="#161616",
-                    foreground="#89948D",
+                    background="#0A0D09",
+                    foreground="#667855",
                     mouse_callbacks={
                         "Button1": lambda: qtile.cmd_spawn("rofi -show drun")
                     },
                 ),
                 widget.Mpd2(
                     status_format='{play_status} {artist}/{title}',
-                    foreground="#89948D",
+                    foreground="#667855",
                     padding=10,
                     host='localhost',
                     port='6600',
@@ -215,15 +215,15 @@ screens = [
                     idle_format='{play_status} {idle_message}[{repeat}{random}{single}{consume}{updating_db}]',
                 ),
                 widget.Spacer(
-                    background="#161616",
+                    background="#0A0D09",
                 ),
                 widget.GroupBox(
                     use_mouse_wheel=True,
                     highlight_method="block",
-                    this_current_screen_border="#161616",
+                    this_current_screen_border="#0A0D09",
                     fontsize=20,
-                    foreground="#161616",
-                    active="#89948D",
+                    foreground="#0A0D09",
+                    active="#667855",
                     margin=0,
                     margin_x=0,
                     margin_y=2,
@@ -232,16 +232,16 @@ screens = [
                     padding_y=6,
                 ),
                 widget.Spacer(
-                    background="#161616",
+                    background="#0A0D09",
                 ),
                 widget.TextBox(
-                    text=f" {clock_icon} ", fontsize=14, foreground="#89948D"
+                    text=f" {clock_icon} ", fontsize=14, foreground="#667855"
                 ),
-                widget.Clock(format="%I:%M %p", fontsize=14, padding=10, foreground="#89948D"),
+                widget.Clock(format="%I:%M %p", fontsize=14, padding=10, foreground="#667855"),
                 widget.TextBox(
                     text=f" {battery_icon} ",
                     fontsize=14,
-                    foreground="#89948D",
+                    foreground="#667855",
                     mouse_callbacks={
                         "Button1": lambda: qtile.cmd_spawn(
                             "xfce4-power-manager-settings"
@@ -252,7 +252,7 @@ screens = [
                     battery=0,
                     format="{percent:2.0%} -",
                     fontsize=14,
-                    foreground="#89948D",
+                    foreground="#667855",
                     mouse_callbacks={
                         "Button1": lambda: qtile.cmd_spawn(
                             "xfce4-power-manager-settings"
@@ -264,7 +264,7 @@ screens = [
                     format="{percent:2.0%}",
                     padding=10,
                     fontsize=14,
-                    foreground="#89948D",
+                    foreground="#667855",
                     mouse_callbacks={
                         "Button1": lambda: qtile.cmd_spawn(
                             "xfce4-power-manager-settings"
@@ -274,19 +274,19 @@ screens = [
                 widget.Systray(
                     padding=10,
                     fontsize=10,
-                    foreground="#89948D",
+                    foreground="#667855",
                 ),
                 widget.TextBox(
                     text=f" {powermenu_icon} ",
                     padding=10,
                     fontsize=14,
-                    background="#161616",
-                    foreground="#89948D",
+                    background="#0A0D09",
+                    foreground="#667855",
                     mouse_callbacks={"Button1": lambda: qtile.cmd_spawn("powermenu")},
                 ),
             ],
             50,  # Set height of the bar
-            background="#161616",  # Set the background color
+            background="#0A0D09",  # Set the background color
             margin=[0, 0, 0, 0],  # Set the left, top, right, and bottom margins
         ),
     ),
