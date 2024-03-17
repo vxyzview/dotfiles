@@ -211,3 +211,8 @@ alias loff 'loginctl poweroff'
 alias lboot 'loginctl reboot'
 alias lpend 'loginctl suspend'
 alias lsleep 'loginctl sleep'
+
+# Web development
+alias xrun 'sudo /opt/lampp/lampp start'
+alias xstop 'sudo /opt/lampp/lampp stop'
+alias mxampp 'sudo ./opt/lamp/manager-linux-x64.run'
