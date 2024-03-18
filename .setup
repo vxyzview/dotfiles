@@ -72,4 +72,3 @@ run powertop --auto-tune
 run xsetroot -cursor_name left_ptr
 run picom --config "$DIR/picom.conf" --daemon
 run xsettingsd --config="$DIR/xsettingsd/xsettingsd.conf"
-exec dbus-run-session qtile start
