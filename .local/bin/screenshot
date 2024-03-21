@@ -37,7 +37,7 @@ countdown() {
 
 # Convert image to add shadow and background
 convert_image() {
-  convert "$1" \( +clone -background black -shadow 25x30+0+0 \) +swap -background '#bdc2be' -layers merge "$2"
+  convert "$1" \( +clone -background black -shadow 25x30+0+0 \) +swap -background '#6E835C' -layers merge "$2"
 }
 
 # Take a screenshot of the entire screen
