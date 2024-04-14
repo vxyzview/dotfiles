@@ -219,3 +219,6 @@ alias mxampp 'sudo ./opt/lamp/manager-linux-x64.run'
 
 # Clipboard
 alias clipp 'xclip -sel clip'
+
+# Neovim
+alias nvim 'nvim +Nvdash'
