@@ -1,0 +1,88 @@
+#!/bin/bash
+
+# Define language code and name mappings
+declare -A language_codes=(
+    ["af"]="Afrikaans" ["sq"]="Albanian" ["am"]="Amharic" ["ar"]="Arabic" ["hy"]="Armenian"
+    ["az"]="Azerbaijani" ["eu"]="Basque" ["be"]="Belarusian" ["bn"]="Bengali" ["bs"]="Bosnian"
+    ["bg"]="Bulgarian" ["ca"]="Catalan" ["ceb"]="Cebuano" ["ny"]="Chichewa" ["zh-CN"]="Chinese (Simplified)"
+    ["zh-TW"]="Chinese (Traditional)" ["co"]="Corsican" ["hr"]="Croatian" ["cs"]="Czech" ["da"]="Danish"
+    ["nl"]="Dutch" ["en"]="English" ["eo"]="Esperanto" ["et"]="Estonian" ["tl"]="Filipino" ["fi"]="Finnish"
+    ["fr"]="French" ["fy"]="Frisian" ["gl"]="Galician" ["ka"]="Georgian" ["de"]="German" ["el"]="Greek"
+    ["gu"]="Gujarati" ["ht"]="Haitian Creole" ["ha"]="Hausa" ["haw"]="Hawaiian" ["iw"]="Hebrew" ["hi"]="Hindi"
+    ["hmn"]="Hmong" ["hu"]="Hungarian" ["is"]="Icelandic" ["ig"]="Igbo" ["id"]="Indonesian" ["ga"]="Irish"
+    ["it"]="Italian" ["ja"]="Japanese" ["jv"]="Javanese" ["kn"]="Kannada" ["kk"]="Kazakh" ["km"]="Khmer"
+    ["ko"]="Korean" ["ku"]="Kurdish (Kurmanji)" ["ky"]="Kyrgyz" ["lo"]="Lao" ["la"]="Latin" ["lv"]="Latvian"
+    ["lt"]="Lithuanian" ["lb"]="Luxembourgish" ["mk"]="Macedonian" ["mg"]="Malagasy" ["ms"]="Malay"
+    ["ml"]="Malayalam" ["mt"]="Maltese" ["mi"]="Maori" ["mr"]="Marathi" ["mn"]="Mongolian" ["my"]="Myanmar (Burmese)"
+    ["ne"]="Nepali" ["no"]="Norwegian" ["or"]="Odia (Oriya)" ["ps"]="Pashto" ["fa"]="Persian" ["pl"]="Polish"
+    ["pt"]="Portuguese" ["pa"]="Punjabi" ["ro"]="Romanian" ["ru"]="Russian" ["sm"]="Samoan" ["gd"]="Scots Gaelic"
+    ["sr"]="Serbian" ["st"]="Sesotho" ["sn"]="Shona" ["sd"]="Sindhi" ["si"]="Sinhala" ["sk"]="Slovak"
+    ["sl"]="Slovenian" ["so"]="Somali" ["es"]="Spanish" ["su"]="Sundanese" ["sw"]="Swahili" ["sv"]="Swedish"
+    ["tg"]="Tajik" ["ta"]="Tamil" ["te"]="Telugu" ["th"]="Thai" ["tr"]="Turkish" ["uk"]="Ukrainian"
+    ["ur"]="Urdu" ["ug"]="Uyghur" ["uz"]="Uzbek" ["vi"]="Vietnamese" ["cy"]="Welsh" ["xh"]="Xhosa"
+    ["yi"]="Yiddish" ["yo"]="Yoruba" ["zu"]="Zulu"
+)
+
+# Function to display language selection menu
+display_language_menu() {
+    echo "Available Languages:"
+    echo "-------------------"
+    for code in "${!language_codes[@]}"; do
+        printf "[%s]\t%s\n" "$code" "${language_codes[$code]}"
+    done
+}
+
+# Function to perform text translation
+translate_text() {
+    local from_lang="$1"
+    local to_lang="$2"
+    local text="$3"
+
+    local url="https://translate.googleapis.com/translate_a/single?client=gtx&sl=${from_lang}&tl=${to_lang}&dt=t&q=$(urlencode "$text")"
+    local translation=$(curl -sSL "$url" | sed 's/\[\[\[\"//' | cut -d '"' -f 1)
+    echo "$translation"
+}
+
+# Function to URL encode the text for use in curl
+urlencode() {
+    echo -n "$1" | jq -s -R -r @uri
+}
+
+# Function to copy text to clipboard
+copy_to_clipboard() {
+    echo -n "$1" | xclip -selection clipboard
+    echo "Translated text has been copied to the clipboard. You can now paste it (Ctrl+V) into another application."
+}
+
+# Main function
+main() {
+    # Display language selection menu
+    display_language_menu
+
+    # Prompt for source language
+    read -rp "Enter the code of the source language: " source_lang_code
+    source_lang="${language_codes[$source_lang_code]}"
+    [[ -z "$source_lang" ]] && { echo "Invalid source language code. Exiting."; exit 1; }
+
+    # Prompt for target language
+    read -rp "Enter the code of the target language: " target_lang_code
+    target_lang="${language_codes[$target_lang_code]}"
+    [[ -z "$target_lang" ]] && { echo "Invalid target language code. Exiting."; exit 1; }
+
+    # Prompt for text to translate
+    read -rp "Enter the text to translate (press Ctrl+D when done): " input_text
+
+    # Perform translation
+    translated_text=$(translate_text "$source_lang_code" "$target_lang_code" "$input_text")
+
+    # Display translated text
+    echo -e "\nTranslated Text (from $source_lang to $target_lang):"
+    echo "$translated_text"
+
+    # Copy translated text to clipboard
+    copy_to_clipboard "$translated_text"
+}
+
+# Execute main function
+main
+
