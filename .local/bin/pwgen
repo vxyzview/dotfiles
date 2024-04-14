@@ -1,7 +1,7 @@
 #!/bin/bash
 
 DATA_DIR="$HOME/.pwgen"
-DATA_FILE="$DATA_DIR/password_data.txt"
+DATA_FILE="$DATA_DIR/password.txt"
 
 generate_password() {
     local length=$1
@@ -14,9 +14,7 @@ save_password() {
     local password=$1
     local note=$2
     local timestamp=$(date +"%Y-%m-%d %T")
-    local salt=$(head -c 32 /dev/urandom | base64)
-    local hashed_password=$(echo -n "$password$salt" | sha256sum | awk '{print $1}')
-    
+
     # Create the directory if it doesn't exist
     mkdir -p "$DATA_DIR"
 
@@ -24,20 +22,20 @@ save_password() {
     {
         echo "Timestamp: $timestamp"
         echo "Usage Note: $note"
-        echo "Salt: $salt"
-        echo "Hashed Password: $hashed_password"
+        echo "Password: $password"
         echo "------------------------------------"
     } >> "$DATA_FILE"
 
-    echo "Password saved in $DATA_FILE with the note: $note"
+    echo "Password details saved in $DATA_FILE with the note: $note"
 }
 
 copy_to_clipboard() {
-    echo -n "$1" | xclip -selection clipboard
+    local password=$1
+    echo -n "$password" | xclip -selection clipboard
     echo "Password copied to clipboard"
 }
 
-main() {
+main_generate() {
     echo "Welcome to Password Generator"
     read -p "Please specify the length of the password: " length
     
@@ -52,6 +50,37 @@ main() {
     
     save_password "$password" "$note"
     copy_to_clipboard "$password"
+}
+
+main_save_existing() {
+    echo "Welcome to Password Saver"
+    read -p "Please enter the existing password you want to save: " password
+    
+    if [ -z "$password" ]; then
+        echo "Password cannot be empty."
+        exit 1
+    fi
+
+    read -p "Please provide a note for what you're using this password for: " note
+    
+    save_password "$password" "$note"
+}
+
+select_option() {
+    echo "Select an option:"
+    echo "1. Generate a new password"
+    echo "2. Save an existing password"
+    read -p "Enter your choice (1 or 2): " choice
+
+    case $choice in
+        1) main_generate ;;
+        2) main_save_existing ;;
+        *) echo "Invalid choice. Please enter 1 or 2." ;;
+    esac
+}
+
+main() {
+    select_option
 }
 
 main
