@@ -17,6 +17,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Color border for screenshot ( HEX )
+COLOR="#6E835C"
+
 # Environment variables
 export QT_QPA_PLATFORMTHEME="gtk3"
 export VISUAL="nvim"
