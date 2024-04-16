@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# Launch gpick and get the selected color
+color=$(gpick --pick --single --output)
+
+# Strip any trailing newline characters
+color=$(echo "$color" | tr -d '\n')
+
+# Copy the color value to the clipboard using xclip
+echo -n "$color" | xclip -selection clipboard
+
+# Display a notification using Dunst
+notify-send "Color Picked!" "Color '$color' copied to clipboard."
