@@ -69,7 +69,7 @@ take_and_process_screenshot() {
       ;;
   esac
 
-  convert "$temp_file" "$file"
+  convert "$temp_file" \( +clone -background black -shadow 25x30+0+0 \) +swap -background "$COLOR" -layers merge "$file"
   xclip -selection clipboard -t image/png -i "$file"
   notify_with_image "Screenshot Taken" "Image copied to clipboard" "$file"
 
