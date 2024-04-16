@@ -16,97 +16,92 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 # Configuration
-NOTIFY_ICON="" # Default notification icon
-TIMER_ICON=""  # Timer icon for notifications
+readonly NOTIFY_ICON=""   # Default notification icon
+readonly TIMER_ICON=""    # Timer icon for notifications
+readonly PICTURES_DIR="${XDG_PICTURES_DIR:-$HOME/Pictures}/Screenshots"
+readonly TEMP_DIR=$(mktemp -d)
 
-# Functions
+# Function to display a notification with image attachment
+notify_with_image() {
+  local title="$1"
+  local message="$2"
+  local image_path="$3"
 
-# Display notification with specified message
-notify() {
-  dunstify -u low -i "$NOTIFY_ICON" "$1"
+  if [[ ! -f "$image_path" ]]; then
+    echo "Error: Image file not found: $image_path"
+    return 1
+  fi
+
+  dunstify --replace=1 -u low -i "$image_path" "$title" "$message"
 }
 
 # Countdown function with notifications
 countdown() {
-  for ((sec = $1; sec > 0; sec--)); do
-    notify "Taking shot in: $sec $TIMER_ICON"
+  local duration=$1
+  while (( duration > 0 )); do
+    dunstify --replace=1 -u low -i "$TIMER_ICON" "Taking shot in:" "$duration"
     sleep 1
+    (( duration-- ))
   done
 }
 
-# Convert image to add shadow and background
-convert_image() {
-  convert "$1" \( +clone -background black -shadow 25x30+0+0 \) +swap -background "$COLOR" -layers merge "$2"
+# Take a screenshot and process it
+take_and_process_screenshot() {
+  local temp_file="$TEMP_DIR/temp.png"
+  local file="$PICTURES_DIR/Screenshot_$(date +%Y-%m-%d-%H-%M-%S).png"
+  local option="$1"
+
+  case $option in
+    "full")
+      sleep 0.5
+      maim -u -f png "$temp_file"
+      ;;
+    "window")
+      maim -i "$(xdotool getactivewindow)" "$temp_file"
+      ;;
+    "area")
+      maim -s "$temp_file"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+
+  convert "$temp_file" "$file"
+  xclip -selection clipboard -t image/png -i "$file"
+  notify_with_image "Screenshot Taken" "Image copied to clipboard" "$file"
+
+  rm "$temp_file"
 }
 
-# Take a screenshot of the entire screen
-take_screenshot() {
-  maim -u -f png "$1"
-}
-
-# Take a screenshot of a selected area
-take_area_screenshot() {
-  maim -s "$1"
-}
-
-# Take a screenshot of the active window
-take_window_screenshot() {
-  maim -i "$(xdotool getactivewindow)" "$1"
-}
-
-# Copy image to clipboard
-copy_to_clipboard() {
-  xclip -selection clipboard -t image/png -i "$1"
-}
-
-# Create a directory if it doesn't exist
+# Main
 create_directory() {
   [[ -d "$1" ]] || mkdir -p "$1" || { echo "Error creating directory: $1"; exit 1; }
 }
 
-# Main
+create_directory "$PICTURES_DIR"
 
-timestamp=$(date +%Y-%m-%d-%H-%M-%S)
-geometry=$(xrandr --current | awk '/current/ {print $8}')
-pictures_dir="$(xdg-user-dir PICTURES)/Screenshots"
-temp_file="${pictures_dir}/temp_${timestamp}.png"
-file="${pictures_dir}/Screenshot_${timestamp}_${geometry}.png"
-
-create_directory "$pictures_dir"
-
-# Read color value from .envvars
 if [[ -f "$HOME/.envvars" ]]; then
   source "$HOME/.envvars"
 fi
 
-# Check if COLOR variable is set
-if [[ -n "$COLOR" ]]; then
-  # Use custom color for notifications and image background
-  NOTIFY_ICON="$COLOR"
-fi
+COLOR="${COLOR:-#FFFFFF}"  # Default color if not set in .envvars
 
-# Options for rofi
-options=(" Screenshot Now Full" " Screenshot In 5 Seconds" " Screenshot In 10 Seconds" " Screenshot Window" " Screenshot Area")
-
-selected_option=$(printf '%s\n' "${options[@]}" | rofi -dmenu -i -p "Screenshot" -columns 1 -width 30) || exit 1
+selected_option=$(printf '%s\n' "full" "5" "10" "window" "area" | rofi -dmenu -i -p "Screenshot" -columns 1 -width 30) || exit 1
 
 case $selected_option in
-" Screenshot Now Full" | " Screenshot In 5 Seconds" | " Screenshot In 10 Seconds")
-  countdown "${selected_option: -1}" && sleep 2 && take_screenshot "$temp_file" && convert_image "$temp_file" "$file" && copy_to_clipboard "$file" && notify "Screenshot taken after ${selected_option: -1} seconds. Image copied to clipboard."
-  ;;
-" Screenshot Window")
-  take_window_screenshot "$temp_file" && sleep 2 && convert_image "$temp_file" "$file" && copy_to_clipboard "$file" && notify "Window screenshot taken. Image copied to clipboard."
-  ;;
-" Screenshot Area")
-  take_area_screenshot "$temp_file" && sleep 2 && convert_image "$temp_file" "$file" && copy_to_clipboard "$file" && notify "Area screenshot taken. Image copied to clipboard."
-  ;;
-*)
-  exit 1
-  ;;
+  "full" | "window" | "area")
+    take_and_process_screenshot "$selected_option"
+    ;;
+  "5" | "10")
+    countdown "$selected_option"
+    take_and_process_screenshot "full"
+    ;;
+  *)
+    exit 1
+    ;;
 esac
-
-# Remove temp file
-rm "$temp_file"
 
 exit 0
