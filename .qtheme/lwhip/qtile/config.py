@@ -101,6 +101,7 @@ keys = [
     Key([mod], "t", lazy.spawn("change"), desc="Theme Change"),
     Key([mod], "b", lazy.spawn("wallset"), desc="Wallpaper Change"),
     Key([mod], "z", lazy.spawn("powermenu"), desc="Power Menu"),
+    Key([mod], "o", lazy.spawn("record"), desc="Screen Record"),
 ]
 
 # Groups

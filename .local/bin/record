@@ -1,0 +1,98 @@
+#!/bin/bash
+
+# Function to show menu and get user choice for quality, FPS, and audio
+function show_menu {
+    # Use rofi for menu selection and store choices in variables
+    quality=$(echo -e "High\nMedium\nLow" | rofi -dmenu -p "Select quality:")
+    case $quality in
+        High)
+            preset="ultrafast"
+            crf=18  # Lower CRF for higher video quality
+            ;;
+        Medium)
+            preset="medium"
+            crf=23
+            ;;
+        Low)
+            preset="veryslow"
+            crf=28  # Higher CRF for lower video quality
+            ;;
+        *)
+            dunstify "Error" "Invalid quality choice. Exiting." --urgency=critical
+            exit 1
+            ;;
+    esac
+
+    fps=$(echo -e "60\n90\n120\n144\n240" | rofi -dmenu -p "Select FPS:")
+    case $fps in
+        60|90|120|144|240)
+            ;;
+        *)
+            dunstify "Error" "Invalid FPS choice. Exiting." --urgency=critical
+            exit 1
+            ;;
+    esac
+
+    include_audio=$(echo -e "Yes\nNo" | rofi -dmenu -p "Include audio?")
+    case $include_audio in
+        Yes)
+            audio="-f pulse -i default"
+            ;;
+        No)
+            audio=""
+            ;;
+        *)
+            dunstify "Error" "Invalid audio choice. Exiting." --urgency=critical
+            exit 1
+            ;;
+    esac
+}
+
+# Function to start screen recording
+function start_recording {
+    show_menu
+
+    # Define output directory
+    output_dir="$HOME/Videos"
+
+    # Create output directory if it does not exist
+    mkdir -p "$output_dir"
+
+    # Generate output file name with date and time (using dots for date and colons for time)
+    datetime=$(date '+%Y.%m.%d_%H:%M:%S')
+
+    resolution=$(xdpyinfo | awk '/dimensions/ {print $2}')
+    fps_suffix="${fps}fps"
+    audio_suffix=$(echo "$include_audio" | tr '[:upper:]' '[:lower:]')
+    audio_suffix="${audio_suffix}_audio"
+
+    # Construct descriptive file name with chosen separators
+    output_file="$output_dir/Screenrecord_${datetime}_${resolution}_${fps_suffix}_${quality}_${audio_suffix}.mkv"
+
+    # Log the recording settings as a notification using dunstify
+    dunstify "Starting screen recording" \
+             "Quality: $quality, FPS: $fps, Audio: $include_audio" \
+             --urgency=low
+
+    # Start recording using ffmpeg with adjusted parameters
+    ffmpeg -probesize 50M -thread_queue_size 1024 -f x11grab -video_size "$resolution" \
+           -framerate $fps -i $DISPLAY $audio \
+           -c:v libx264 -preset $preset -crf $crf -pix_fmt yuv420p \
+           -c:a flac -compression_level 8 \
+           -af "aresample=async=1:min_hard_comp=0.100000:first_pts=0" \
+           -avoid_negative_ts make_zero \
+           -fflags +genpts \
+           "$output_file"
+
+    # Check if ffmpeg command was successful
+    if [ $? -eq 0 ]; then
+        dunstify "Screen recording complete" "File saved: $output_file" --urgency=normal
+    else
+        dunstify "Recording stopped" "An error occurred during recording." --urgency=critical
+    fi
+}
+
+# Main script
+start_recording
+
+exit 0
