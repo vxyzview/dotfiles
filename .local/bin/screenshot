@@ -17,8 +17,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # Configuration
-NOTIFY_ICON="" # Nerd Fonts icon for notifications
-TIMER_ICON=""  # Nerd Fonts icon for timer
+NOTIFY_ICON="" # Default notification icon
+TIMER_ICON=""  # Timer icon for notifications
 
 # Functions
 
@@ -37,7 +37,7 @@ countdown() {
 
 # Convert image to add shadow and background
 convert_image() {
-  convert "$1" \( +clone -background black -shadow 25x30+0+0 \) +swap -background '#6E835C' -layers merge "$2"
+  convert "$1" \( +clone -background black -shadow 25x30+0+0 \) +swap -background "$COLOR" -layers merge "$2"
 }
 
 # Take a screenshot of the entire screen
@@ -55,6 +55,11 @@ take_window_screenshot() {
   maim -i "$(xdotool getactivewindow)" "$1"
 }
 
+# Copy image to clipboard
+copy_to_clipboard() {
+  xclip -selection clipboard -t image/png -i "$1"
+}
+
 # Create a directory if it doesn't exist
 create_directory() {
   [[ -d "$1" ]] || mkdir -p "$1" || { echo "Error creating directory: $1"; exit 1; }
@@ -70,35 +75,36 @@ file="${pictures_dir}/Screenshot_${timestamp}_${geometry}.png"
 
 create_directory "$pictures_dir"
 
-SCRIPT_NAME="screenshot"
+# Read color value from .envvars
+if [[ -f "$HOME/.envvars" ]]; then
+  source "$HOME/.envvars"
+fi
+
+# Check if COLOR variable is set
+if [[ -n "$COLOR" ]]; then
+  # Use custom color for notifications and image background
+  NOTIFY_ICON="$COLOR"
+fi
 
 # Options for rofi
 options=(" Screenshot Now Full" " Screenshot In 5 Seconds" " Screenshot In 10 Seconds" " Screenshot Window" " Screenshot Area")
 
-selected_option=$(printf '%s\n' "${options[@]}" | rofi -dmenu -i -p "$SCRIPT_NAME" -columns 1 -width 30) || exit 1
-
-# Function to use rofi to prompt the user to open in viewnior
-viewnior_prompt() {
-  open_in_viewnior=$(echo -e "Yes\nNo" | rofi -dmenu -p "Open in viewnior?" -columns 1 -width 20)
-  [[ "$open_in_viewnior" == "Yes" ]] && viewnior "$1"
-}
+selected_option=$(printf '%s\n' "${options[@]}" | rofi -dmenu -i -p "Screenshot" -columns 1 -width 30) || exit 1
 
 case $selected_option in
 " Screenshot Now Full" | " Screenshot In 5 Seconds" | " Screenshot In 10 Seconds")
-  countdown "${selected_option: -1}" && sleep 2 && take_screenshot "$temp_file" && convert_image "$temp_file" "$file" && notify "Screenshot taken after ${selected_option: -1} seconds."
+  countdown "${selected_option: -1}" && sleep 2 && take_screenshot "$temp_file" && convert_image "$temp_file" "$file" && copy_to_clipboard "$file" && notify "Screenshot taken after ${selected_option: -1} seconds. Image copied to clipboard."
   ;;
 " Screenshot Window")
-  take_window_screenshot "$temp_file" && sleep 2 && convert_image "$temp_file" "$file" && notify "Window screenshot taken."
+  take_window_screenshot "$temp_file" && sleep 2 && convert_image "$temp_file" "$file" && copy_to_clipboard "$file" && notify "Window screenshot taken. Image copied to clipboard."
   ;;
 " Screenshot Area")
-  take_area_screenshot "$temp_file" && sleep 2 && convert_image "$temp_file" "$file" && notify "Area screenshot taken."
+  take_area_screenshot "$temp_file" && sleep 2 && convert_image "$temp_file" "$file" && copy_to_clipboard "$file" && notify "Area screenshot taken. Image copied to clipboard."
   ;;
 *)
   exit 1
   ;;
 esac
-
-viewnior_prompt "$file"
 
 # Remove temp file
 rm "$temp_file"
