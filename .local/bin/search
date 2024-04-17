@@ -1,0 +1,54 @@
+#!/bin/bash
+
+# Define an associative array of browsers with corresponding search URLs
+declare -A browsers=(
+    ["Google"]="https://www.google.com/search?q="
+    ["YouTube"]="https://www.youtube.com/results?search_query="
+    ["TikTok"]="https://www.tiktok.com/tag/"
+    ["DuckDuckGo"]="https://duckduckgo.com/?q="
+    ["Yandex"]="https://yandex.com/search/?text="
+    ["Mangadex"]="https://mangadex.org/search?title="
+    ["GitHub"]="https://github.com/search?q="
+    ["Spotify"]="https://open.spotify.com/search/"
+    ["W3Schools"]="https://www.w3schools.com/"
+    ["StackOverflow"]="https://stackoverflow.com/search?q="
+    ["CodePen.io"]="https://codepen.io/search/pens?q="
+)
+
+# Create a string of browser names for rofi
+browser_options=$(printf "%s\n" "${!browsers[@]}")
+
+# Use rofi to display a menu for selecting a browser
+selected_browser=$(echo "$browser_options" | rofi -dmenu -p "Select a browser:")
+
+# Exit if no browser is selected (user pressed Escape)
+if [ -z "$selected_browser" ]; then
+    exit 0
+fi
+
+# Use rofi to prompt for a search term
+search_term=$(rofi -dmenu -p "Enter search term:")
+
+# Exit if no search term is entered (user pressed Escape)
+if [ -z "$search_term" ]; then
+    exit 0
+fi
+
+# Get the URL corresponding to the selected browser
+search_url=${browsers[$selected_browser]}
+
+# Encode the search term for URL
+encoded_search_term=$(echo "$search_term" | sed 's/ /+/g')
+
+# Construct the full URL with the search term
+full_url="${search_url}${encoded_search_term}"
+
+# Open the selected browser with the constructed URL
+case "$selected_browser" in
+    "Google" | "DuckDuckGo" | "Yandex" | "YouTube" | "TikTok" | "Mangadex" | "GitHub" | "Spotify" | "W3Schools" | "StackOverflow" | "CodePen.io")
+        xdg-open "$full_url" ;;
+    *)
+        echo "Unsupported browser." ;;
+esac
+
+exit 0

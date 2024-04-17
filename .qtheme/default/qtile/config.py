@@ -108,6 +108,7 @@ keys = [
     Key([mod], "o", lazy.spawn("record"), desc="Screen Record"),
     Key([mod], "c", lazy.spawn("pick"), desc="Color Picker"),
     Key([mod], "m", lazy.spawn("msplay"), desc="Music Player"),
+    Key([mod], "q", lazy.spawn("search"), desc="Searcher"),
 ]
 
 # Groups
