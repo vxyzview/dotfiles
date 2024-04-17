@@ -1,0 +1,58 @@
+#!/bin/bash
+
+# Directory where music files are stored
+MUSIC_DIR="$HOME/Music"
+
+# Check if the Music directory exists
+if [ ! -d "$MUSIC_DIR" ]; then
+    echo "Music directory not found: $MUSIC_DIR"
+    exit 1
+fi
+
+# Function to extract basename (filename without path and extension)
+get_clean_name() {
+    filename="$1"
+    # Use basename to get filename without path, then remove file extension
+    basename "$(basename "$filename" | sed 's/\.[^.]*$//')"
+}
+
+# Function to play music using ffplay for audio playback
+play_music() {
+    selected_file="$1"
+    echo "Playing: $(get_clean_name "$selected_file")"
+    nohup ffplay -nodisp -autoexit -loglevel panic "$selected_file" >/dev/null 2>&1 &
+}
+
+# Use rofi to present start or stop options
+action=$(echo -e "Start music\nStop music" | rofi -dmenu -i -p "Choose action: ")
+
+# Based on the chosen action, either start or stop the music
+if [ "$action" = "Start music" ]; then
+    # List all music files in the directory (supporting common lossless formats)
+    music_files=$(find "$MUSIC_DIR" -type f \( -name "*.mp3" -o -name "*.wav" -o -name "*.ogg" -o -name "*.flac" \))
+
+    # Check if there are no music files
+    if [ -z "$music_files" ]; then
+        echo "No music files found in $MUSIC_DIR"
+        exit 1
+    fi
+
+    # Use rofi to select a music file to play (clean names without path or extension)
+    selected=$(echo "$music_files" | while read -r file; do get_clean_name "$file"; done | rofi -dmenu -i -p "Select a song: ")
+
+    # Find the full path of the selected music file based on its clean name
+    selected_file=$(echo "$music_files" | grep "$(echo "$selected" | sed 's/[][\.^$*+?(){}|]/\\&/g')")
+
+    # If user selects a file, play it using ffplay in the background
+    if [ -n "$selected_file" ]; then
+        play_music "$selected_file"
+    else
+        echo "Error: Selected file not found."
+        exit 1
+    fi
+elif [ "$action" = "Stop music" ]; then
+    # Stop any existing ffplay process playing music
+    pkill -f "ffplay -nodisp -autoexit -loglevel panic"
+fi
+
+exit 0

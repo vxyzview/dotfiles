@@ -103,6 +103,7 @@ keys = [
     Key([mod], "z", lazy.spawn("powermenu"), desc="Power Menu"),
     Key([mod], "o", lazy.spawn("record"), desc="Screen Record"),
     Key([mod], "c", lazy.spawn("pick"), desc="Color Picker"),
+    Key([mod], "m", lazy.spawn("msplay"), desc="Music Player"),
 ]
 
 # Groups
