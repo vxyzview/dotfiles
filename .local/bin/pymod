@@ -1,0 +1,81 @@
+#!/bin/bash
+
+# Function to activate virtual environment
+activate_venv() {
+    if [ -d "${venv_dir}" ]; then
+        source "${venv_dir}/bin/activate"
+    else
+        echo "Error: Virtual environment not found."
+        exit 1
+    fi
+}
+
+# Function to deactivate virtual environment
+deactivate_venv() {
+    deactivate
+}
+
+# Prompt the user to choose install or uninstall
+echo "Choose an option:"
+echo "1. Install a Python package/module"
+echo "2. Uninstall a Python package/module"
+read -p "Enter your choice (1 or 2): " choice
+
+# Path to the directory where the virtual environment will be created
+venv_dir="$HOME/.pipenv"
+
+# Check if python3 is available
+if ! command -v python3 &>/dev/null; then
+    echo "Error: Python3 is not installed."
+    exit 1
+fi
+
+case $choice in
+    1)
+        # Install a Python package/module
+        read -p "Enter the name of the Python package/module you want to install: " package_name
+        
+        # Create a virtual environment if not already created
+        python3 -m venv "${venv_dir}"
+
+        # Activate the virtual environment
+        activate_venv
+
+        # Install the package/module using pip within the virtual environment
+        pip install "${package_name}"
+
+        # Verify installation status
+        if [ $? -eq 0 ]; then
+            echo "Installation of '${package_name}' successful."
+        else
+            echo "Failed to install '${package_name}'."
+        fi
+
+        # Deactivate the virtual environment
+        deactivate_venv
+        ;;
+    2)
+        # Uninstall a Python package/module
+        read -p "Enter the name of the Python package/module you want to uninstall: " package_name
+        
+        # Activate the virtual environment
+        activate_venv
+
+        # Uninstall the package/module using pip within the virtual environment
+        pip uninstall -y "${package_name}"
+
+        # Verify uninstallation status
+        if [ $? -eq 0 ]; then
+            echo "Uninstallation of '${package_name}' successful."
+        else
+            echo "Failed to uninstall '${package_name}'."
+        fi
+
+        # Deactivate the virtual environment
+        deactivate_venv
+        ;;
+    *)
+        echo "Invalid choice. Please enter 1 or 2."
+        exit 1
+        ;;
+esac
