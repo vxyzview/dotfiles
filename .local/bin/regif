@@ -1,0 +1,25 @@
+#!/bin/bash
+
+# Function to select a region of the screen
+select_region() {
+    echo "Select the area to record..."
+    sleep 1
+    rect=$(slop -f "%x %y %w %h %g %i") || exit 1
+    read -r X Y W H G ID < <(echo "$rect")
+}
+
+# Function to record the screen
+record_screen() {
+    ffmpeg -loglevel quiet -video_size "$W"x"$H" -framerate 60 -f x11grab -i :0.0+"$X","$Y" -vf "fps=10,scale=800:-1:flags=lanczos" -c:v gif "$output_gif"
+}
+
+# Main function
+main() {
+    select_region
+    current_time=$(date "+%Y%m%d-%H%M%S")
+    output_gif="$HOME/Videos/screengif-$current_time.gif"
+    record_screen
+    echo "GIF saved as $output_gif"
+}
+
+main
