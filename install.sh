@@ -19,7 +19,7 @@ check_existence() {
 install_packages() {
     if command -v xbps-install &>/dev/null; then
         sudo xbps-install -Sy \
-            void-repo-nonfree void-repo-multilib void-repo-multilib-nonfree \
+            void-repo-nonfree void-repo-multilib void-repo-multilib-nonfree
         sudo xbps-install -Sy \
             xclip powertop xfce4-notifyd pulseaudio bluez blueman \
             rofi pamixer NetworkManager alacritty git curl neovim \
@@ -42,8 +42,8 @@ install_packages() {
             xdg-desktop-portal-kde xdg-desktop-portal-wlr \
             xdg-desktop-portal-gnome xdg-desktop-portal-gtk xdg-user-dirs \
             xdg-user-dirs-gtk xdg-utils gedit zip unzip tar 7zip \
-            7zip-unrar bzip2 zstd lz4 lz4jsoncat xz libXft-devel \
-            libXinerama-devel make virt-manager virt-manager-tools fish \
+            bzip2 zstd lz4 lz4jsoncat xz libXft-devel \
+            libXinerama-devel make virt-manager virt-manager-tools fish-shell \
             pasystray network-manager-applet 
         echo "Packages installed successfully on Void Linux."
     elif command -v pacman &>/dev/null; then
@@ -97,7 +97,7 @@ sync_config_files() {
 
 # Function to install Starship shell prompt
 starship_shell_install() {
-    curl -fsSL https://starship.rs/install.sh | bash
+    curl -fsSL https://starship.rs/install.sh | sh
 }
 
 # Function for additional configurations
