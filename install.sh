@@ -19,6 +19,8 @@ check_existence() {
 install_packages() {
     if command -v xbps-install &>/dev/null; then
         sudo xbps-install -Sy \
+            void-repo-nonfree void-repo-multilib void-repo-multilib-nonfree \
+        sudo xbps-install -Sy \
             xclip powertop xfce4-notifyd pulseaudio bluez blueman \
             rofi pamixer NetworkManager alacritty git curl neovim \
             xfce4-settings qtile xorg-minimal xorg-input-drivers \
@@ -42,8 +44,7 @@ install_packages() {
             xdg-user-dirs-gtk xdg-utils gedit zip unzip tar 7zip \
             7zip-unrar bzip2 zstd lz4 lz4jsoncat xz libXft-devel \
             libXinerama-devel make virt-manager virt-manager-tools fish \
-            pasystray network-manager-applet void-repo-nonfree \
-            void-repo-multilib void-repo-multilib-nonfree
+            pasystray network-manager-applet 
         echo "Packages installed successfully on Void Linux."
     elif command -v pacman &>/dev/null; then
         yay -S --noconfirm \
