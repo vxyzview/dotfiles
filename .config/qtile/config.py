@@ -202,7 +202,7 @@ screens = [
                     background="#0A0D09",
                     foreground="#667855",
                     mouse_callbacks={
-                        "Button1": lambda: qtile.cmd_spawn("rofi -show drun")
+                        "Button1": lambda: qtile.spawn("rofi -show drun")
                     },
                 ),
                 widget.Mpd2(
@@ -243,7 +243,7 @@ screens = [
                     fontsize=14,
                     foreground="#667855",
                     mouse_callbacks={
-                        "Button1": lambda: qtile.cmd_spawn(
+                        "Button1": lambda: qtile.spawn(
                             "xfce4-power-manager-settings"
                         )
                     },
@@ -254,7 +254,7 @@ screens = [
                     fontsize=14,
                     foreground="#667855",
                     mouse_callbacks={
-                        "Button1": lambda: qtile.cmd_spawn(
+                        "Button1": lambda: qtile.spawn(
                             "xfce4-power-manager-settings"
                         )
                     },
@@ -266,7 +266,7 @@ screens = [
                     fontsize=14,
                     foreground="#667855",
                     mouse_callbacks={
-                        "Button1": lambda: qtile.cmd_spawn(
+                        "Button1": lambda: qtile.spawn(
                             "xfce4-power-manager-settings"
                         )
                     },
@@ -282,7 +282,7 @@ screens = [
                     fontsize=14,
                     background="#0A0D09",
                     foreground="#667855",
-                    mouse_callbacks={"Button1": lambda: qtile.cmd_spawn("powermenu")},
+                    mouse_callbacks={"Button1": lambda: qtile.spawn("powermenu")},
                 ),
             ],
             50,  # Set height of the bar
