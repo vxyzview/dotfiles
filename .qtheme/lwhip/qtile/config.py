@@ -177,7 +177,7 @@ screens = [
                     fontsize=14,
                     padding=5,
                     foreground="#f2f4f8",
-                    mouse_callbacks={'Button1': lambda: qtile.cmd_spawn("dmenu_run -l 15 -c -g 3")}
+                    mouse_callbacks={'Button1': lambda: qtile.spawn("dmenu_run -l 15 -c -g 3")}
                 ),
                 widget.CurrentLayout(
                     fontsize=14,
@@ -242,21 +242,21 @@ screens = [
                     text=f" {battery_icon} ",
                     fontsize=14,
                     foreground="#f2f4f8",
-                    mouse_callbacks={'Button1': lambda: qtile.cmd_spawn("xfce4-power-manager-settings")}
+                    mouse_callbacks={'Button1': lambda: qtile.spawn("xfce4-power-manager-settings")}
                 ),
                 widget.Battery(
                     battery=0,
                     format="{percent:2.0%} |",
                     fontsize=14,
                     foreground="#f2f4f8",
-                    mouse_callbacks={'Button1': lambda: qtile.cmd_spawn("xfce4-power-manager-settings")}
+                    mouse_callbacks={'Button1': lambda: qtile.spawn("xfce4-power-manager-settings")}
                 ),
                 widget.Battery(
                     battery=1,
                     format="{percent:2.0%}",
                     fontsize=14,
                     foreground="#f2f4f8",
-                    mouse_callbacks={'Button1': lambda: qtile.cmd_spawn("xfce4-power-manager-settings")}
+                    mouse_callbacks={'Button1': lambda: qtile.spawn("xfce4-power-manager-settings")}
                 ),
 		widget.Systray(
                     padding=10,
@@ -268,7 +268,7 @@ screens = [
 	            padding=10,
                     fontsize=14,
                     foreground="#f2f4f8",
-	            mouse_callbacks={'Button1': lambda: qtile.cmd_spawn("powermenu")}
+	            mouse_callbacks={'Button1': lambda: qtile.spawn("powermenu")}
                 ),
             ],
             43,  # Set height of the bar
