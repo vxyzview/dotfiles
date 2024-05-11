@@ -2,13 +2,13 @@
 ```bash
 wget https://bit.ly/pyranixdot | bash
 ```
-#### Setup Audio
-> ( Only For Voidlinux ), no need if your audio already work
-```bash
-wget https://bit.ly/pyranixaudio | bash
-```
-#### Setup Package Full
-> ( Optional, *Only For Archlinux*, May Broke Some Package )
-```bash
-wget https://bit.ly/pyranixfullarch | bash
-```
+#### Keybindings
+<p align="center">
+  <br><br>
+  <img src="/images/mod4.png"/>
+<p align="center">
+  <br><br>
+  <img src="/images/mod4-shift.png"/>
+<p align="center">
+  <br><br>
+  <img src="/images/mod4-control.png"/>
