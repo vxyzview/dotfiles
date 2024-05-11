@@ -13,6 +13,7 @@ terminal = "alacritty"  # Use the default terminal emulator
 @hook.subscribe.startup_once
 def autostart():
     home = os.path.expanduser("~")
+    os.environ["PATH"] += f":{home}/.local/bin"
     subprocess.call([home + "/.setup"])
 
 keys = [
@@ -98,10 +99,10 @@ keys = [
     Key([mod], "e", lazy.spawn("thunar"), desc="File manager"),
     Key([mod], "h", lazy.spawn("xclip"), desc="Clipboard"),
     Key([mod], "s", lazy.spawn("screenshot"), desc="Screenshot"),
-    Key([mod], "t", lazy.spawn("change"), desc="Theme Change"),
+    Key([mod], "v", lazy.spawn("change"), desc="Theme Change"),
     Key([mod], "b", lazy.spawn("wallset"), desc="Wallpaper Change"),
     Key([mod], "z", lazy.spawn("powermenu"), desc="Power Menu"),
-    Key([mod], "o", lazy.spawn("record"), desc="Screen Record"),
+    Key([mod], "u", lazy.spawn("record"), desc="Screen Record"),
     Key([mod], "c", lazy.spawn("pick"), desc="Color Picker"),
     Key([mod], "m", lazy.spawn("msplay"), desc="Music Player"),
     Key([mod], "q", lazy.spawn("search"), desc="Searcher"),
