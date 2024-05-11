@@ -92,7 +92,7 @@ clone_repository() {
 
 # Function to sync configuration files
 sync_config_files() {
-    rsync -a --exclude=".git*" --exclude="install.sh" --exclude=".scripts*" --exclude="README.md" "$destination/" "$HOME"
+    rsync -a --exclude=".git*" --exclude="install.sh" --exclude="images" --exclude=".scripts*" --exclude="README.md" "$destination/" "$HOME"
 }
 
 # Function to install Starship shell prompt
@@ -119,16 +119,11 @@ additional_configuration() {
     xdg-user-dirs-gtk-update
 }
 
-restart_qtile() {
-    qtile cmd-obj -o cmd -f restart
-}
-
 # Main execution
 install_packages
 clone_repository
 sync_config_files
 starship_shell_install
 additional_configuration
-restart_qtile
 
 echo "Configuration setup completed."
