@@ -41,12 +41,36 @@ if [ -z "$1" ]; then
   exit 1
 fi
 
+PACKAGE_NAME="$1"
+
 # Run the xbps-src command to build the package
-./xbps-src pkg "$1"
+./xbps-src pkg "$PACKAGE_NAME"
+
+# Check if the package was built successfully
+if [ $? -ne 0 ]; then
+  echo "Failed to build package: $PACKAGE_NAME"
+  exit 1
+fi
+
+# Determine the package directory (e.g. hostdir/binpkgs or hostdir/binpkgs/nonfree)
+PACKAGE_DIR="$(find hostdir/binpkgs -type d -name "$PACKAGE_NAME" -print -quit)"
+if [ -z "$PACKAGE_DIR" ]; then
+  PACKAGE_DIR="hostdir/binpkgs"
+fi
+
+# Install the built package
+sudo xbps-install --repository "$PACKAGE_DIR" "$PACKAGE_NAME"
+
+if [ $? -eq 0 ]; then
+  echo "Package $PACKAGE_NAME installed successfully."
+else
+  echo "Failed to install package: $PACKAGE_NAME"
+  exit 1
+fi
 EOF
 
 # Make the vpkg command executable
 sudo chmod +x $VP_COMMAND
 
 echo "The vpkg command has been created and is available at $VP_COMMAND."
-echo "You can now use 'vpkg <package_name>' to build packages."
+echo "You can now use 'vpkg <package_name>' to build and install packages."
