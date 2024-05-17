@@ -1,0 +1,52 @@
+#!/bin/bash
+
+# Define the directory where the void-packages repo will be cloned
+VP_DIR="$HOME/.vpkg"
+
+# Check if the directory already exists
+if [ ! -d "$VP_DIR" ]; then
+  echo "Cloning the void-packages repository into $VP_DIR..."
+  git clone --depth=1 https://github.com/void-linux/void-packages "$VP_DIR"
+else
+  echo "The directory $VP_DIR already exists. Skipping clone."
+fi
+
+# Navigate to the void-packages directory
+cd "$VP_DIR"
+
+# Run the binary bootstrap
+echo "Running binary-bootstrap..."
+./xbps-src binary-bootstrap
+
+# Configure XBPS to allow restricted packages
+echo "Configuring XBPS to allow restricted packages..."
+echo "XBPS_ALLOW_RESTRICTED=yes" >> etc/conf
+
+# Create the vpkg command
+VP_COMMAND="/usr/local/bin/vpkg"
+
+# Write the vpkg command
+cat << 'EOF' | sudo tee $VP_COMMAND > /dev/null
+#!/bin/bash
+
+# Define the directory where the void-packages repo is cloned
+VP_DIR="$HOME/.vpkg"
+
+# Navigate to the void-packages directory
+cd "$VP_DIR"
+
+# Check for the first argument
+if [ -z "$1" ]; then
+  echo "Usage: vpkg <package_name>"
+  exit 1
+fi
+
+# Run the xbps-src command to build the package
+./xbps-src pkg "$1"
+EOF
+
+# Make the vpkg command executable
+sudo chmod +x $VP_COMMAND
+
+echo "The vpkg command has been created and is available at $VP_COMMAND."
+echo "You can now use 'vpkg <package_name>' to build packages."
