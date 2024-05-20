@@ -2,6 +2,29 @@
 
 ![Dotfiles](https://your-image-url.com)
 
+## Directory Listing
+```
+dotfiles/
+├── .config/
+├── .fonts/
+├── .icons/
+├── .local/
+├── .notify/
+│   └── images/
+├── .qtheme/
+├── .scripts/
+├── .themes/
+├── .wallpaper/
+├── images/
+├── .envvars
+├── .fehbg
+├── .gtkrc-2.0
+├── .setup
+├── LICENSE
+├── README.md
+└── install.sh
+```
+
 ## Description
 
 These dotfiles are crafted with love to enhance your productivity by making your workflow faster and smarter, while also embracing the beauty of laziness. They are tailored for a seamless experience with the following configurations:
