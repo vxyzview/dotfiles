@@ -1,0 +1,111 @@
+#!/bin/bash
+
+# Function to detect the operating system
+detect_os() {
+    if [ -f /etc/arch-release ]; then
+        OS="arch"
+    elif [ -f /etc/void-release ]; then
+        OS="void"
+    else
+        echo "Unsupported operating system."
+        exit 1
+    fi
+}
+
+# Function to start the Apache server on Arch
+start_apache_arch() {
+    echo "Starting Apache server on Arch..."
+    sudo systemctl start httpd
+    sudo systemctl enable httpd
+    echo "Apache server started. You can access it at http://localhost"
+}
+
+# Function to start the Apache server on Void
+start_apache_void() {
+    echo "Starting Apache server on Void..."
+    sudo ln -s /etc/sv/httpd /var/service/
+    echo "Apache server started. You can access it at http://localhost"
+}
+
+# Function to setup PHP on Arch
+setup_php_arch() {
+    echo "Setting up PHP on Arch..."
+    sudo pacman -S php php-apache
+    # Configure Apache to use PHP
+    sudo sed -i 's/^#\(LoadModule .*mod_php.so\)/\1/' /etc/httpd/conf/httpd.conf
+    echo "
+    <FilesMatch \.php$>
+        SetHandler application/x-httpd-php
+    </FilesMatch>
+    " | sudo tee -a /etc/httpd/conf/httpd.conf
+    sudo systemctl restart httpd
+    echo "PHP setup complete. You can place your PHP files in /srv/http/"
+}
+
+# Function to setup PHP on Void
+setup_php_void() {
+    echo "Setting up PHP on Void..."
+    sudo xbps-install -Sy php php-apache
+    # Configure Apache to use PHP
+    sudo sed -i 's/^#\(LoadModule .*mod_php.so\)/\1/' /etc/httpd/conf/httpd.conf
+    echo "
+    <FilesMatch \.php$>
+        SetHandler application/x-httpd-php
+    </FilesMatch>
+    " | sudo tee -a /etc/httpd/conf/httpd.conf
+    sudo sv restart httpd
+    echo "PHP setup complete. You can place your PHP files in /srv/http/"
+}
+
+# Function to host a website
+host_website() {
+    read -p "Enter the path to your website directory: " website_path
+    if [ -d "$website_path" ]; then
+        sudo rm -rf /srv/http/*
+        sudo cp -r "$website_path"/* /srv/http/
+        if [ "$OS" == "arch" ]; then
+            start_apache_arch
+        elif [ "$OS" == "void" ]; then
+            start_apache_void
+        fi
+    else
+        echo "Directory does not exist."
+    fi
+}
+
+# Function to host a PHP application
+host_php() {
+    read -p "Enter the path to your PHP application directory: " php_path
+    if [ -d "$php_path" ]; then
+        sudo rm -rf /srv/http/*
+        sudo cp -r "$php_path"/* /srv/http/
+        if [ "$OS" == "arch" ]; then
+            setup_php_arch
+        elif [ "$OS" == "void" ]; then
+            setup_php_void
+        fi
+    else
+        echo "Directory does not exist."
+    fi
+}
+
+# Detect the operating system
+detect_os
+
+# Main menu
+echo "Select an option:"
+echo "1. Host a Website"
+echo "2. Host a PHP Application"
+read -p "Enter your choice (1 or 2): " choice
+
+case $choice in
+    1)
+        host_website
+        ;;
+    2)
+        host_php
+        ;;
+    *)
+        echo "Invalid choice."
+        ;;
+esac
