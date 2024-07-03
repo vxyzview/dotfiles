@@ -1,0 +1,96 @@
+#!/bin/bash
+
+# Function to display help
+show_help() {
+    echo "Usage: $0 [-e] [-a algorithm] [-p password] -o output_file input_files"
+    echo "  -e                 Enable encryption"
+    echo "  -a algorithm       Compression algorithm: tar, gzip, bzip2, zip, lz4, zstd (default: tar)"
+    echo "  -p password        Password for encryption (required if -e is specified)"
+    echo "  -o output_file     Output compressed file"
+    echo "  input_files        Files or directories to compress"
+}
+
+# Default values
+ENCRYPTION=false
+ALGORITHM="tar"
+PASSWORD=""
+OUTPUT_FILE=""
+INPUT_FILES=()
+
+# Parse options
+while getopts "ea:p:o:h" opt; do
+    case ${opt} in
+        e)
+            ENCRYPTION=true
+            ;;
+        a)
+            ALGORITHM=${OPTARG}
+            ;;
+        p)
+            PASSWORD=${OPTARG}
+            ;;
+        o)
+            OUTPUT_FILE=${OPTARG}
+            ;;
+        h)
+            show_help
+            exit 0
+            ;;
+        \?)
+            show_help
+            exit 1
+            ;;
+    esac
+done
+shift $((OPTIND -1))
+
+# Get input files
+INPUT_FILES=("$@")
+
+# Check required parameters
+if [[ -z "${OUTPUT_FILE}" ]] || [[ ${#INPUT_FILES[@]} -eq 0 ]]; then
+    show_help
+    exit 1
+fi
+
+# Check encryption parameters
+if [[ "${ENCRYPTION}" == true ]] && [[ -z "${PASSWORD}" ]]; then
+    echo "Encryption password is required when -e is specified"
+    exit 1
+fi
+
+# Compression and encryption
+case "${ALGORITHM}" in
+    tar)
+        tar -cvf "${OUTPUT_FILE}.tar" "${INPUT_FILES[@]}"
+        [[ "${ENCRYPTION}" == true ]] && openssl enc -aes-256-cbc -salt -in "${OUTPUT_FILE}.tar" -out "${OUTPUT_FILE}.tar.enc" -pass pass:"${PASSWORD}" && rm "${OUTPUT_FILE}.tar"
+        ;;
+    gzip)
+        tar -cvf - "${INPUT_FILES[@]}" | gzip > "${OUTPUT_FILE}.tar.gz"
+        [[ "${ENCRYPTION}" == true ]] && openssl enc -aes-256-cbc -salt -in "${OUTPUT_FILE}.tar.gz" -out "${OUTPUT_FILE}.tar.gz.enc" -pass pass:"${PASSWORD}" && rm "${OUTPUT_FILE}.tar.gz"
+        ;;
+    bzip2)
+        tar -cvf - "${INPUT_FILES[@]}" | bzip2 > "${OUTPUT_FILE}.tar.bz2"
+        [[ "${ENCRYPTION}" == true ]] && openssl enc -aes-256-cbc -salt -in "${OUTPUT_FILE}.tar.bz2" -out "${OUTPUT_FILE}.tar.bz2.enc" -pass pass:"${PASSWORD}" && rm "${OUTPUT_FILE}.tar.bz2"
+        ;;
+    zip)
+        zip -r "${OUTPUT_FILE}.zip" "${INPUT_FILES[@]}"
+        [[ "${ENCRYPTION}" == true ]] && openssl enc -aes-256-cbc -salt -in "${OUTPUT_FILE}.zip" -out "${OUTPUT_FILE}.zip.enc" -pass pass:"${PASSWORD}" && rm "${OUTPUT_FILE}.zip"
+        ;;
+    lz4)
+        tar -cvf - "${INPUT_FILES[@]}" | lz4 > "${OUTPUT_FILE}.tar.lz4"
+        [[ "${ENCRYPTION}" == true ]] && openssl enc -aes-256-cbc -salt -in "${OUTPUT_FILE}.tar.lz4" -out "${OUTPUT_FILE}.tar.lz4.enc" -pass pass:"${PASSWORD}" && rm "${OUTPUT_FILE}.tar.lz4"
+        ;;
+    zstd)
+        tar -cvf - "${INPUT_FILES[@]}" | zstd > "${OUTPUT_FILE}.tar.zst"
+        [[ "${ENCRYPTION}" == true ]] && openssl enc -aes-256-cbc -salt -in "${OUTPUT_FILE}.tar.zst" -out "${OUTPUT_FILE}.tar.zst.enc" -pass pass:"${PASSWORD}" && rm "${OUTPUT_FILE}.tar.zst"
+        ;;
+    *)
+        echo "Unsupported compression algorithm: ${ALGORITHM}"
+        exit 1
+        ;;
+esac
+
+echo "Compression completed successfully."
+[[ "${ENCRYPTION}" == true ]] && echo "File encrypted successfully."
+  
