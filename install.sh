@@ -64,6 +64,22 @@ command_exists() {
     command -v "$1" &>/dev/null
 }
 
+# Function to install yay if not already installed
+install_yay() {
+    if ! command_exists yay; then
+        echo "[ INFO ] Yay not found, installing yay..."
+        temp_dir=$(mktemp -d)
+        git clone https://aur.archlinux.org/yay-bin.git "$temp_dir"
+        cd "$temp_dir"
+        makepkg -si --noconfirm
+        cd -
+        rm -rf "$temp_dir"
+        echo "[ INFO ] Yay installed successfully."
+    else
+        echo "[ INFO ] Yay is already installed."
+    fi
+}
+
 # Function to determine distribution and install packages
 install_packages() {
     if command_exists xbps-install; then
@@ -72,6 +88,7 @@ install_packages() {
         sudo xbps-install -Sy "${void_packages[@]}"
         echo "[ INFO ] Packages installed successfully on Void Linux."
     elif command_exists pacman; then
+        install_yay
         echo "[ INFO ] Installing packages for Arch Linux..."
         yay -S --noconfirm "${arch_packages[@]}"
         echo "[ INFO ] Packages installed successfully on Arch Linux."
