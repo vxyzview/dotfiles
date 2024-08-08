@@ -51,7 +51,3 @@ frame_color = "#0A0D09"
 highlight = "#BDC2BE"
 timeout = 0
 icon = ~/.config/dunst/images/notification.png
-
-[play_sound]
-    summary = "*"
-    script = ~/.local/bin/notif.sh
