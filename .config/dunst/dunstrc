@@ -2,8 +2,8 @@
 width = 250
 height = 200
 notification_limit = 5
-origin = bottom-right
-offset = 20x20
+origin = top-center
+offset = 0x20
 progress_bar = true
 progress_bar_corner_radius = 5
 monitor = 0
@@ -14,7 +14,7 @@ transparency = 0
 font = JetBrains Mono Bold 10
 markup = full
 format = "<b>%s</b>\n%b"
-alignment = left
+alignment = center
 word_wrap = yes
 ellipsize = middle
 ignore_newline = no
@@ -24,13 +24,13 @@ show_indicators = yes
 icon_position = left
 max_icon_size = 32
 icon_path = /usr/share/icons/Tela-black/24/apps/scalable:/usr/share/icons/Tela-black/24/devices/scalable/
-corner_radius = 8
+corner_radius = 15
 title = dunst
 class = dunst
 
 [urgency_low]
 background = "#0A0D09"
-foreground = "#667855"
+foreground = "#BCC5C0"
 frame_color = "#0A0D09"
 highlight = "#BDC2BE"
 timeout = 10
@@ -38,7 +38,7 @@ icon = ~/.config/dunst/images/notification.png
 
 [urgency_normal]
 background = "#0A0D09"
-foreground = "#667855"
+foreground = "#BCC5C0"
 frame_color = "#0A0D09"
 highlight = "#BDC2BE"
 timeout = 10
@@ -46,7 +46,7 @@ icon = ~/.config/dunst/images/notification.png
 
 [urgency_critical]
 background = "#0A0D09"
-foreground = "#667855"
+foreground = "#FFD700"
 frame_color = "#0A0D09"
 highlight = "#BDC2BE"
 timeout = 0
