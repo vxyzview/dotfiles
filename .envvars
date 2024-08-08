@@ -43,4 +43,57 @@ export XDEB_OPT_FIX_CONFLICT="true"
 export NVIM_APPNAME="nvim"
 
 # Path my script
-export PATH="$DIR/nvim/bin:$HOME/.local/bin:$PATH"
+export PATH="$DIR/nvim/bin:$HOME/.local/bin:$HOME/bin:$PATH"
+
+# Development Tools
+
+# Python
+export PYTHONPATH="$HOME/.local/lib/python3.x/site-packages:$PYTHONPATH"
+export VIRTUAL_ENV_DISABLE_PROMPT=1
+export PIP_CONFIG_FILE="$HOME/.config/pip/pip.conf"
+
+# JavaScript/Node.js
+export NODE_PATH="$HOME/.node_modules_global/lib/node_modules:$NODE_PATH"
+export PATH="$HOME/.node_modules_global/bin:$PATH"
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
+# Java
+export JAVA_HOME="/usr/lib/jvm/java-11-openjdk"
+export PATH="$JAVA_HOME/bin:$PATH"
+
+# Ruby
+export GEM_HOME="$HOME/.gem"
+export PATH="$GEM_HOME/bin:$PATH"
+export RUBY_VERSION="2.7.4"
+
+# Go
+export GOPATH="$HOME/go"
+export PATH="$GOPATH/bin:$PATH"
+
+# Rust
+export CARGO_HOME="$HOME/.cargo"
+export PATH="$CARGO_HOME/bin:$PATH"
+
+# Git
+export GIT_EDITOR="nvim"
+export GIT_CONFIG_GLOBAL="$HOME/.gitconfig"
+export GIT_PAGER="less -F -X"
+
+# Docker
+export DOCKER_BUILDKIT=1
+export DOCKER_DEFAULT_PLATFORM="linux/amd64"
+
+# Database
+# export PGUSER="your_pg_user"
+# export PGHOST="localhost"
+# export PGPORT="5432"
+# export PGDATABASE="your_pg_database"
+# export MYSQL_HOME="$HOME/.my.cnf"
+# export MYSQL_PWD="your_mysql_password" 
+# For convenience, consider using a .my.cnf file instead
+
+# Optional: Other configurations
+export LANG="en_US.UTF-8"
+export LC_ALL="en_US.UTF-8"
+export PAGER="less"
