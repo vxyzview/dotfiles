@@ -21,53 +21,58 @@ function add_task() {
   ALARM=$(yad --entry --title="Set Alarm" --text="Set alarm time (e.g., 14:30 or leave blank):" --width=300)
 
   if [ -n "$ALARM" ]; then
-    echo "$TASK (Alarm set for $ALARM)" >> "$TODO_FILE"
+    echo "FALSE $TASK (Alarm set for $ALARM)" >> "$TODO_FILE"
     echo "notify-send 'To-Do Reminder' '$TASK'" | at "$ALARM" 2>/dev/null
   else
-    echo "$TASK" >> "$TODO_FILE"
+    echo "FALSE $TASK" >> "$TODO_FILE"
   fi
 }
 
 # Function to display the to-do list
 function show_todo() {
-  yad --list \
+  TASKS=$(yad --list \
+      --checklist \
       --text="Your To-Do List" \
       --title="Minimalist Floating To-Do By @pyranix" \
+      --column="Done" \
       --column="Tasks" \
       --width=300 \
       --height=400 \
       --window-icon="todo" \
       --button="Add Task:0" \
       --button="Remove Task:1" \
-      --button="Exit:2" \
+      --button="Save:2" \
+      --button="Exit:3" \
       --center \
-      --no-headers \
-      --hide-column=0 \
       --filename="$TODO_FILE" \
-      --buttons-layout=center
+      --buttons-layout=center)
 
   case $? in
     0) add_task; show_todo ;;
-    1) remove_task; show_todo ;;
-    2) exit 0 ;;
+    1) remove_task "$TASKS"; show_todo ;;
+    2) save_tasks "$TASKS"; show_todo ;;
+    3) exit 0 ;;
   esac
 }
 
-# Function to remove a selected task
+# Function to remove selected tasks
 function remove_task() {
-  SELECTED_TASK=$(yad --list \
-      --title="Remove Task" \
-      --column="Tasks" \
-      --width=300 \
-      --height=400 \
-      --window-icon="todo" \
-      --hide-column=0 \
-      --filename="$TODO_FILE" \
-      --buttons-layout=center)
-      
-  if [ -n "$SELECTED_TASK" ]; then
-    grep -v "^$SELECTED_TASK$" "$TODO_FILE" > /tmp/todo_tmp && mv /tmp/todo_tmp "$TODO_FILE"
-  fi
+  IFS="|" read -r -a SELECTED_TASKS <<< "$1"
+  
+  for task in "${SELECTED_TASKS[@]}"; do
+    sed -i "\| $task\$|d" "$TODO_FILE"
+  done
+}
+
+# Function to save the tasks with updated statuses
+function save_tasks() {
+  IFS="|" read -r -a SELECTED_TASKS <<< "$1"
+  
+  > "$TODO_FILE"  # Clear the file
+
+  for task in "${SELECTED_TASKS[@]}"; do
+    echo "TRUE $task" >> "$TODO_FILE"
+  done
 }
 
 # Function to make the window float
