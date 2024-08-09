@@ -1,0 +1,35 @@
+#!/bin/bash
+
+# Check if xclip is installed
+if ! command -v xclip &> /dev/null; then
+    echo "xclip is not installed. Please install it and try again."
+    exit 1
+fi
+
+# Check if a URL is provided as an argument
+if [ -z "$1" ]; then
+  # If no URL is provided, try to get it from the clipboard
+  URL=$(xclip -o -selection clipboard)
+  
+  # Check if the clipboard is empty
+  if [ -z "$URL" ]; then
+    echo "Usage: ./dlscript <url> or copy a URL to the clipboard."
+    exit 1
+  else
+    echo "Using URL from clipboard: $URL"
+  fi
+else
+  # If a URL is provided as an argument, use it
+  URL="$1"
+fi
+
+# Optimize aria2c for faster downloads
+# -x16: use up to 16 connections per download
+aria2c -x16 "$URL"
+
+# Check if the download was successful
+if [ $? -eq 0 ]; then
+  echo "Download completed: $URL"
+else
+  echo "Error downloading: $URL"
+fi
