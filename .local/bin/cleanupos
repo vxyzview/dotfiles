@@ -1,0 +1,50 @@
+#!/bin/bash
+
+# Detect the Linux distribution
+if [ -f /etc/arch-release ]; then
+    DISTRO="arch"
+elif [ -f /etc/void-release ]; then
+    DISTRO="void"
+else
+    echo "Unsupported Linux distribution."
+    exit 1
+fi
+
+# Function to clean cache
+clean_cache() {
+    if [ "$DISTRO" == "arch" ]; then
+        echo "Cleaning cache for Arch Linux..."
+        sudo pacman -Sc --noconfirm
+    elif [ "$DISTRO" == "void" ]; then
+        echo "Cleaning cache for Void Linux..."
+        sudo xbps-remove -O
+    fi
+}
+
+# Function to clean duplicate files
+clean_duplicates() {
+    echo "Cleaning duplicate files..."
+    fdupes -r -dN ~/
+}
+
+# Function to clean unused files/apps
+clean_unused() {
+    if [ "$DISTRO" == "arch" ]; then
+        echo "Cleaning unused files/apps for Arch Linux..."
+        sudo pacman -Rns $(pacman -Qdtq) --noconfirm
+        echo "Cleaning orphaned packages..."
+        sudo pacman -Rns $(pacman -Qtdq) --noconfirm
+    elif [ "$DISTRO" == "void" ]; then
+        echo "Cleaning unused files/apps for Void Linux..."
+        sudo xbps-remove -o
+        echo "Removing unneeded packages..."
+        sudo xbps-remove -R $(xbps-query -o)
+    fi
+}
+
+# Run the functions
+clean_cache
+clean_duplicates
+clean_unused
+
+echo "System cleanup completed."
