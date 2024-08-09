@@ -1,0 +1,83 @@
+#!/bin/bash
+
+# Step 1: Prompt the user for a URL using rofi
+URL=$(rofi -dmenu -p "Enter URL:")
+
+# If no URL is entered, exit the script
+if [ -z "$URL" ]; then
+    exit 1
+fi
+
+# Add 'http://' if the user didn't specify a protocol
+if [[ ! "$URL" =~ ^(http|https):// ]]; then
+    URL="http://$URL"
+fi
+
+# Step 2: Create the GTK-based web browser using WebKit2
+cat <<EOF > /tmp/web_browser.py
+import gi
+gi.require_version('Gtk', '3.0')
+gi.require_version('WebKit2', '4.0')
+from gi.repository import Gtk, WebKit2
+
+class WebBrowser(Gtk.Window):
+    def __init__(self, url):
+        super(WebBrowser, self).__init__(title="Web Browser")
+        self.set_default_size(800, 600)
+
+        # Create a WebKit WebView widget
+        self.webview = WebKit2.WebView()
+
+        # Load the initial URL
+        self.webview.load_uri(url)
+
+        # Create a back button
+        self.back_button = Gtk.Button(label="Back")
+        self.back_button.connect("clicked", self.go_back)
+
+        # Create a forward button
+        self.forward_button = Gtk.Button(label="Forward")
+        self.forward_button.connect("clicked", self.go_forward)
+
+        # Create a refresh button
+        self.refresh_button = Gtk.Button(label="Refresh")
+        self.refresh_button.connect("clicked", self.refresh)
+
+        # Create a navigation bar
+        self.navbar = Gtk.Box(spacing=6)
+        self.navbar.pack_start(self.back_button, False, False, 0)
+        self.navbar.pack_start(self.forward_button, False, False, 0)
+        self.navbar.pack_start(self.refresh_button, False, False, 0)
+
+        # Create a vertical box to hold the navbar and webview
+        self.vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.vbox.pack_start(self.navbar, False, False, 0)
+        self.vbox.pack_start(self.webview, True, True, 0)
+
+        # Add the vbox to the window
+        self.add(self.vbox)
+
+        # Show all components
+        self.show_all()
+
+    def go_back(self, widget):
+        if self.webview.can_go_back():
+            self.webview.go_back()
+
+    def go_forward(self, widget):
+        if self.webview.can_go_forward():
+            self.webview.go_forward()
+
+    def refresh(self, widget):
+        self.webview.reload()
+
+if __name__ == "__main__":
+    browser = WebBrowser("$URL")
+    Gtk.main()
+EOF
+
+# Step 3: Run the GTK-based web browser
+python3 /tmp/web_browser.py
+
+# Clean up the temporary Python script
+rm /tmp/web_browser.py
