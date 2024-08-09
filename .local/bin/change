@@ -90,7 +90,7 @@ select_wallpaper() {
     xdg-user-dir
 
     # Restart Qtile to apply the changes
-    qtile cmd-obj -o cmd -f restart
+    qtile cmd-obj -f restart
 
     # Kill already running processes
     for process in xsettingsd alacritty firefox dunst thunar ksuperkey; do
