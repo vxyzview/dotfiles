@@ -1,0 +1,83 @@
+#!/bin/bash
+
+# Dependencies: fzf, ffmpeg, mpv, yt-dlp, aria2c
+
+# Check for dependencies
+for cmd in fzf ffmpeg mpv yt-dlp aria2c; do
+    if ! command -v $cmd &>/dev/null; then
+        echo "$cmd is required but not installed. Aborting."
+        exit 1
+    fi
+done
+
+# Function to search, download, and play videos
+search_and_play_or_download() {
+    platform="$1"
+    query="$2"
+    action="$3"
+    max_results=20
+    next_page=1
+
+    case $platform in
+        youtube)
+            search_cmd="yt-dlp --flat-playlist -J 'ytsearch${max_results}:${next_page} $query'"
+            ;;
+        bilibili)
+            search_cmd="yt-dlp --flat-playlist -J 'https://www.bilibili.com/video/$(echo $query | sed 's/ /+/g')'"
+            ;;
+        tiktok)
+            search_cmd="yt-dlp --flat-playlist -J 'https://www.tiktok.com/search?q=$(echo $query | sed 's/ /%20/g')'"
+            ;;
+        twitch)
+            search_cmd="yt-dlp --flat-playlist -J 'https://www.twitch.tv/search?term=$(echo $query | sed 's/ /%20/g')'"
+            ;;
+        *)
+            echo "Unsupported platform: $platform"
+            exit 1
+            ;;
+    esac
+
+    # Fetch the search results and list them
+    results=$(eval $search_cmd | jq -r '.entries[] | .title + " | " + .id' | fzf --layout=reverse --height 40% --prompt="Select video: ")
+
+    if [ -z "$results" ]; then
+        echo "No video selected."
+        exit 0
+    fi
+
+    # Extract the video ID from the selected result
+    video_id=$(echo "$results" | awk -F'|' '{print $2}' | tr -d ' ')
+
+    # Get available formats for the selected video
+    formats=$(yt-dlp -F "$video_id" | awk '/^[0-9]+/ {print $1 " | " $2 " | " $4}' | fzf --layout=reverse --height 40% --prompt="Select format: ")
+
+    if [ -z "$formats" ]; then
+        echo "No format selected."
+        exit 0
+    fi
+
+    format_id=$(echo "$formats" | awk '{print $1}')
+
+    if [ "$action" == "download" ]; then
+        # Download the selected video with the selected format using aria2c
+        echo "Downloading video..."
+        yt-dlp --format "$format_id" --external-downloader aria2c "$video_id"
+    else
+        # Play the selected video with the selected format in mpv
+        echo "Playing video..."
+        mpv --ytdl-format="$format_id" "$video_id"
+    fi
+}
+
+# Main script to parse input arguments and call the function
+if [ $# -lt 3 ]; then
+    echo "Usage: $0 <youtube|bilibili|tiktok|twitch> <play|download> <search query>"
+    exit 1
+fi
+
+platform="$1"
+action="$2"
+shift 2
+query="$*"
+
+search_and_play_or_download "$platform" "$query" "$action"
