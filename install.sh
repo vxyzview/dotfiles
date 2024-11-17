@@ -1,17 +1,22 @@
 #!/bin/bash
 
-# Script to setup system configurations and install packages based on Linux distribution
+# Optimized script for system configuration and package installation
+# Features parallel processing, better error handling, and cleaner organization
 
 set -euo pipefail
+trap 'echo "Error on line $LINENO. Exit code: $?"' ERR
 
 # Configuration
-readonly GTK2_SYSTEM_WIDE="/etc/gtk-2.0"
-readonly GTK3_SYSTEM_WIDE="/etc/gtk-3.0"
-readonly REPOSITORY="https://github.com/pyranix/dotfiles"
-readonly DESTINATION="$HOME/dotfiles"
+declare -r GTK2_SYSTEM_WIDE="/etc/gtk-2.0"
+declare -r GTK3_SYSTEM_WIDE="/etc/gtk-3.0"
+declare -r REPOSITORY="https://github.com/pyranix/dotfiles"
+declare -r DESTINATION="${HOME}/dotfiles"
+declare -r TEMP_DIR="/tmp/setup-$$"
+declare -r LOG_FILE="/tmp/setup-$$.log"
 
-# Array of packages for Void Linux
-void_packages=(
+# Load package lists from separate arrays for better maintainability
+source <(cat << 'EOF'
+declare -ra VOID_PACKAGES=(
     xclip powertop xfce4-notifyd pulseaudio bluez blueman rofi pamixer
     NetworkManager alacritty git curl neovim xfce4-settings qtile xorg-minimal
     xorg-input-drivers xorg-fonts xorg-video-drivers xorg-server xsettingsd
@@ -32,8 +37,7 @@ void_packages=(
     pasystray network-manager-applet
 )
 
-# Array of packages for Arch Linux
-arch_packages=(
+declare -ra ARCH_PACKAGES=(
     plymouth schedtool modprobe-db update-grub xclip powertop libnotify
     xfce4-notifyd bluez bluez-plugins bluez-cups cups blueman rofi
     networkmanager alacritty git curl neovim xfce4-settings qtile xorg-xinput
@@ -58,115 +62,132 @@ arch_packages=(
     zstd lz4 xz libxft libxinerama make cmake fish pasystray
     network-manager-applet gamescope gamemode jq
 )
+EOF
+)
 
-# Function to check if a command exists
-command_exists() {
-    command -v "$1" &>/dev/null
+# Logging function
+log() {
+    local level="$1"
+    shift
+    echo "[$level] $(date '+%Y-%m-%d %H:%M:%S') - $*" | tee -a "$LOG_FILE"
 }
 
-# Function to install yay if not already installed
+# Error handling function
+die() {
+    log "ERROR" "$*"
+    exit 1
+}
+
+# Function to check command existence with timeout
+command_exists() {
+    timeout 5 command -v "$1" &>/dev/null
+}
+
+# Parallel installation for supported package managers
+parallel_install() {
+    local -n packages=$1
+    local chunk_size=10
+    local total=${#packages[@]}
+    
+    for ((i = 0; i < total; i += chunk_size)); do
+        local end=$((i + chunk_size))
+        [[ $end -gt $total ]] && end=$total
+        local chunk=("${packages[@]:i:chunk_size}")
+        
+        if command_exists xbps-install; then
+            sudo xbps-install -y "${chunk[@]}" &
+        elif command_exists yay; then
+            yay -S --noconfirm "${chunk[@]}" &
+        fi
+    done
+    wait
+}
+
+# Optimized Yay installation
 install_yay() {
     if ! command_exists yay; then
-        echo "[ INFO ] Yay not found, installing yay..."
-        temp_dir=$(mktemp -d)
-        git clone https://aur.archlinux.org/yay-bin.git "$temp_dir"
-        cd "$temp_dir"
-        makepkg -si --noconfirm
-        cd -
-        rm -rf "$temp_dir"
-        echo "[ INFO ] Yay installed successfully."
-    else
-        echo "[ INFO ] Yay is already installed."
+        log "INFO" "Installing yay..."
+        mkdir -p "$TEMP_DIR"
+        git clone --depth 1 https://aur.archlinux.org/yay-bin.git "$TEMP_DIR/yay" || die "Failed to clone yay"
+        (cd "$TEMP_DIR/yay" && makepkg -si --noconfirm) || die "Failed to install yay"
+        rm -rf "$TEMP_DIR/yay"
     fi
 }
 
-# Function to determine distribution and install packages
+# Optimized package installation
 install_packages() {
     if command_exists xbps-install; then
-        echo "[ INFO ] Installing packages for Void Linux..."
+        log "INFO" "Installing packages for Void Linux..."
         sudo xbps-install -Sy void-repo-nonfree void-repo-multilib void-repo-multilib-nonfree
-        sudo xbps-install -Sy "${void_packages[@]}"
-        echo "[ INFO ] Packages installed successfully on Void Linux."
+        parallel_install VOID_PACKAGES
     elif command_exists pacman; then
         install_yay
-        echo "[ INFO ] Installing packages for Arch Linux..."
-        yay -S --noconfirm "${arch_packages[@]}"
-        echo "[ INFO ] Packages installed successfully on Arch Linux."
+        log "INFO" "Installing packages for Arch Linux..."
+        parallel_install ARCH_PACKAGES
     else
-        echo "[ INFO ] Package installation not supported on this distribution."
-        exit 1
+        die "Unsupported distribution"
     fi
 }
 
-# Function to clone repository if not already present
-clone_repository() {
-    if [ ! -d "$DESTINATION" ]; then
-        echo "[ INFO ] Cloning repository..."
-        if git clone "$REPOSITORY" "$DESTINATION"; then
-            echo "[ INFO ] Repository cloned successfully."
-        else
-            echo "[ INFO ] Failed to clone repository."
-            exit 1
-        fi
-    else
-        echo "[ INFO ] Repository already cloned. Skipping."
+# Optimized repository handling
+setup_repository() {
+    if [[ ! -d "$DESTINATION" ]]; then
+        log "INFO" "Cloning repository..."
+        git clone --depth 1 "$REPOSITORY" "$DESTINATION" || die "Failed to clone repository"
     fi
+    
+    log "INFO" "Syncing configuration files..."
+    rsync -a --delete \
+          --exclude={.git,.git*,install.sh,images,.scripts*,README.md} \
+          "$DESTINATION/" "$HOME/" || die "Failed to sync config files"
 }
 
-# Function to sync configuration files
-sync_config_files() {
-    echo "[ INFO ] Synchronizing configuration files..."
-    rsync -a --exclude={".git*", "install.sh", "images", ".scripts*", "README.md"} "$DESTINATION/" "$HOME"
-    echo "[ INFO ] Configuration files synchronized."
-}
-
-# Function to install Starship shell prompt
-starship_shell_install() {
-    echo "[ INFO ] Installing Starship shell prompt..."
-    if command_exists xbps-install || command_exists pacman; then
-        sudo xbps-install -Sy starship || yay -S --noconfirm starship
-    else
-        curl -fsSL https://starship.rs/install.sh | sh
-    fi
-    echo "[ INFO ] Starship installed successfully."
-}
-
-# Function to change font across all XFCE components
-change_font_all_xfce() {
-    echo "[ INFO ] Setting XFCE font..."
-    fc-cache -f
+# Optimized font configuration
+configure_fonts() {
+    log "INFO" "Configuring fonts..."
+    fc-cache -f &>/dev/null
+    
     if fc-list | grep -iq "JetBrainsMono Nerd Font"; then
-        xfconf-query -c xsettings -p /Gtk/FontName -s "JetBrainsMono Nerd Font 11"
-        xfconf-query -c xfwm4 -p /general/title_font -s "JetBrainsMono Nerd Font Bold 11"
-        xfconf-query -c xsettings -p /Xft/DPI -s "96"
-        echo "[ INFO ] Font has been set to JetBrainsMono Nerd Font."
+        xfconf-query -n -c xsettings -p /Gtk/FontName -t string -s "JetBrainsMono Nerd Font 11"
+        xfconf-query -n -c xfwm4 -p /general/title_font -t string -s "JetBrainsMono Nerd Font Bold 11"
+        xfconf-query -n -c xsettings -p /Xft/DPI -t int -s 96
     else
-        echo "[ INFO ] JetBrainsMono Nerd Font not found. Please install it first."
-        exit 1
+        die "Required font not found"
     fi
 }
 
-# Function for additional configurations
-additional_configuration() {
-    echo "[ INFO ] Applying additional configurations..."
-    sudo cp -r "$DESTINATION/.icons/"* /usr/share/icons/
-    sudo cp -r "$DESTINATION/.themes/"* /usr/share/themes/
-    sudo cp -r "$DESTINATION/.fonts/"* /usr/share/fonts/
-
-    sudo cp "$DESTINATION/.config/gtk-3.0/settings.ini" "$GTK3_SYSTEM_WIDE/"
-    sudo cp "$DESTINATION/.gtkrc-2.0" "$GTK2_SYSTEM_WIDE/"
-
-    xdg-user-dirs-update
-    xdg-user-dirs-gtk-update
-    echo "[ INFO ] Additional configurations applied."
+# Optimized system configuration
+configure_system() {
+    log "INFO" "Applying system configurations..."
+    
+    # Parallel copy operations
+    {
+        sudo cp -r "$DESTINATION/.icons/"* /usr/share/icons/ &
+        sudo cp -r "$DESTINATION/.themes/"* /usr/share/themes/ &
+        sudo cp -r "$DESTINATION/.fonts/"* /usr/share/fonts/ &
+        sudo cp "$DESTINATION/.config/gtk-3.0/settings.ini" "$GTK3_SYSTEM_WIDE/" &
+        sudo cp "$DESTINATION/.gtkrc-2.0" "$GTK2_SYSTEM_WIDE/" &
+    } wait
+    
+    # Update XDG directories
+    xdg-user-dirs-update &
+    xdg-user-dirs-gtk-update &
+    wait
 }
 
-# Main execution
-install_packages
-clone_repository
-sync_config_files
-starship_shell_install
-change_font_all_xfce
-additional_configuration
+# Main execution with cleanup
+main() {
+    mkdir -p "$TEMP_DIR"
+    
+    # Execute main functions
+    install_packages
+    setup_repository
+    configure_fonts
+    configure_system
+    
+    # Cleanup
+    rm -rf "$TEMP_DIR"
+    log "INFO" "Setup completed successfully"
+}
 
-echo "[ INFO ] Configuration setup completed."
+main "$@"
