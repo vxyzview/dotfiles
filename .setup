@@ -1,74 +1,141 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2199
-# shellcheck disable=SC2086
-# shellcheck source=/dev/null
+# shellcheck disable=SC2199,SC2086,SC1090
 #
 # Copyright (C) 2024-02 pyranix <pyranix@proton.me>
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
+# You may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
 #    http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# WITHOUT WARRANTIES OR CONDITIONS, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Source environment variables
-. "$HOME/.envvars"
-
-# Init DIR
+# ======== Configuration ========
 DIR="$HOME/.config"
+DISTRO="unknown"
 
-# Function to run commands if not already running
+# Colors
+GREEN="\033[1;32m"
+RED="\033[1;31m"
+CYAN="\033[1;36m"
+RESET="\033[0m"
+
+# Paths (adjust based on distro)
+ARCH_POLKIT="/usr/lib/xfce-polkit/xfce-polkit"
+VOID_POLKIT="/usr/libexec/elogind/xfce-polkit"
+PICOM_CONFIG="$DIR/picom.conf"
+XSETTINGS_CONFIG="$DIR/xsettingsd/xsettingsd.conf"
+
+# ======== Functions ========
+log() {
+  echo -e "${CYAN}[INFO]${RESET} $1"
+}
+
+error() {
+  echo -e "${RED}[ERROR]${RESET} $1" >&2
+}
+
+success() {
+  echo -e "${GREEN}[SUCCESS]${RESET} $1"
+}
+
 run() {
   if ! pgrep -f "$1" &>/dev/null; then
+    log "Starting: $1"
     "$@" &
+  else
+    success "$1 is already running"
   fi
 }
 
-# Main System
+kill_if_running() {
+  if pidof "$1" &>/dev/null; then
+    log "Stopping: $1"
+    killall -9 "$1"
+  fi
+}
+
+detect_distro() {
+  if [ -f /etc/os-release ]; then
+    source /etc/os-release
+    DISTRO=$ID
+  fi
+  log "Detected distro: $DISTRO"
+}
+
+get_polkit_agent() {
+  case "$DISTRO" in
+    arch)
+      echo "$ARCH_POLKIT"
+      ;;
+    void)
+      echo "$VOID_POLKIT"
+      ;;
+    *)
+      error "Unsupported distribution: $DISTRO"
+      exit 1
+      ;;
+  esac
+}
+
+# ======== Main Execution ========
+
+# Detect distribution
+detect_distro
+
+# Source environment variables
+[ -f "$HOME/.envvars" ] && . "$HOME/.envvars"
+
+# Initialize X11 settings if available
 if [ -d /etc/X11/xinit/xinitrc.d ]; then
   for f in /etc/X11/xinit/xinitrc.d/?*.sh; do
-    if [ -x "$f" ]; then
-      . "$f"
-    fi
+    [ -x "$f" ] && . "$f"
   done
 fi
 
-# Kill already running processes
-for _prs in xsettingsd dunst ksuperkey; do
-  pid=$(pidof $_prs)
-  if [ -n "$pid" ]; then
-    kill -9 "$pid"
-  fi
+# Kill unwanted processes
+for process in xsettingsd dunst ksuperkey; do
+  kill_if_running "$process"
 done
 
-# polkit agent
-if ! pidof xfce-polkit &>/dev/null; then
-  run /usr/lib/xfce-polkit/xfce-polkit
+# Start polkit agent
+POLKIT_AGENT=$(get_polkit_agent)
+if [ -x "$POLKIT_AGENT" ]; then
+  run "$POLKIT_AGENT"
+else
+  error "Polkit agent not found at $POLKIT_AGENT"
 fi
 
-# Make dbus
+# Start D-Bus session if not already running
 if command -v dbus-launch >/dev/null && [ -z "$DBUS_SESSION_BUS_ADDRESS" ]; then
-  eval "$(dbus-launch --sh-syntax --exit-with-session)"
+  if [ "$DISTRO" = "void" ]; then
+    log "Using elogind for D-Bus session"
+    export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/dbus/system_bus_socket"
+  else
+    eval "$(dbus-launch --sh-syntax --exit-with-session)"
+    success "D-Bus session started"
+  fi
 fi
 
-# Load .profile
-if [ -f ~/.profile ]; then
-  . ~/.profile
+# Load .profile if it exists
+if [ -f "$HOME/.profile" ]; then
+  log "Sourcing ~/.profile"
+  . "$HOME/.profile"
 fi
 
-# Run processes
-run ~/.fehbg
-# run pipewire
-run nm-applet
-run xfsettingsd
-run blueman-applet
-run powertop --auto-tune
-run xsetroot -cursor_name left_ptr
-run picom --config "$DIR/picom.conf" --daemon
-run xsettingsd --config="$DIR/xsettingsd/xsettingsd.conf"
+# Start background processes
+run "$HOME/.fehbg"           # Wallpaper
+run nm-applet                # Network manager
+run xfsettingsd              # XFCE settings daemon
+run blueman-applet           # Bluetooth manager
+run powertop --auto-tune     # Power management
+run xsetroot -cursor_name left_ptr  # Set cursor
+run picom --config "$PICOM_CONFIG" --daemon  # Compositor
+run xsettingsd --config="$XSETTINGS_CONFIG"  # X settings daemon
+
+success "Initialization complete!"
