@@ -118,6 +118,20 @@ create_snapshot() {
     log "SUCCESS" "Snapshot created successfully at $SNAPSHOT_DIR"
 }
 
+# Display snapshot usage instructions
+display_snapshot_usage() {
+    log "INFO" "${MAGENTA}Snapshot Usage Instructions:${RESET}"
+    echo -e "${BOLD}${GREEN}To restore your system state:${RESET}"
+    echo -e "1. ${BOLD}Restore installed packages:${RESET}"
+    echo -e "   For Void Linux:"
+    echo -e "     ${BOLD}sudo xbps-install -Sy \$(cat $SNAPSHOT_DIR/installed_packages.txt)${RESET}"
+    echo -e "   For Arch Linux:"
+    echo -e "     ${BOLD}sudo pacman -S --needed - < $SNAPSHOT_DIR/installed_packages.txt${RESET}\n"
+    echo -e "2. ${BOLD}Restore configuration files:${RESET}"
+    echo -e "     ${BOLD}tar -xzf $SNAPSHOT_DIR/config_backup.tar.gz -C /${RESET}\n"
+    echo -e "${BOLD}${YELLOW}Note:${RESET} Use these commands only if needed (e.g., after an issue with the setup)."
+}
+
 # Install packages for Void or Arch
 install_packages() {
     if command_exists xbps-install; then
@@ -161,6 +175,7 @@ main() {
     clear
     log "INFO" "🎉 Starting system setup for Arch Linux and Void Linux..."
     create_snapshot
+    display_snapshot_usage
     install_packages
     setup_repository
     log "SUCCESS" "✨ Setup completed successfully! Snapshot saved at: $SNAPSHOT_DIR 🚀"
