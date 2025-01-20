@@ -5,7 +5,7 @@ set -euo pipefail
 trap 'log "ERROR" "An error occurred on line $LINENO. Exit code: $?"' ERR
 
 # Configurations
-declare -r REPOSITORY="https://github.com/pyranix/dotfiles"
+declare -r REPOSITORY="https://github.com/vxyzview/dotfiles"
 declare -r DESTINATION="${HOME}/dotfiles"
 declare -r SNAPSHOT_DIR="${HOME}/system_snapshot_$(date +%Y%m%d_%H%M%S)"
 declare -r TEMP_DIR="/tmp/setup-$$"
