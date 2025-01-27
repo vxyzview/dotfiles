@@ -4,14 +4,14 @@
 # Copyright (C) 2024-02 pyranix <pyranix@proton.me>
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
-# You may not use this file except in compliance with the License.
+# you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
 #    http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS, either express or implied.
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
@@ -70,12 +70,8 @@ detect_distro() {
 
 get_polkit_agent() {
   case "$DISTRO" in
-    arch)
-      echo "$ARCH_POLKIT"
-      ;;
-    void)
-      echo "$VOID_POLKIT"
-      ;;
+    arch) echo "$ARCH_POLKIT" ;;
+    void) echo "$VOID_POLKIT" ;;
     *)
       error "Unsupported distribution: $DISTRO"
       exit 1
@@ -123,19 +119,13 @@ if command -v dbus-launch >/dev/null && [ -z "$DBUS_SESSION_BUS_ADDRESS" ]; then
 fi
 
 # Load .profile if it exists
-if [ -f "$HOME/.profile" ]; then
-  log "Sourcing ~/.profile"
-  . "$HOME/.profile"
-fi
+[ -f "$HOME/.profile" ] && { log "Sourcing ~/.profile"; . "$HOME/.profile"; }
 
 # Start background processes
 run "$HOME/.fehbg"           # Wallpaper
 run nm-applet                # Network manager
-run xfsettingsd              # XFCE settings daemon
 run blueman-applet           # Bluetooth manager
 run powertop --auto-tune     # Power management
 run xsetroot -cursor_name left_ptr  # Set cursor
 run picom --config "$PICOM_CONFIG" --daemon  # Compositor
 run xsettingsd --config="$XSETTINGS_CONFIG"  # X settings daemon
-
-success "Initialization complete!"
