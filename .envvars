@@ -1,26 +1,14 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2199
-# shellcheck disable=SC2086
+# shellcheck disable=SC2199,SC2086
 # shellcheck source=/dev/null
-#
+
 # Copyright (C) 2024-02 pyranix <pyranix@proton.me>
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# Licensed under the Apache License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0)
 
-# Color border for screenshot ( HEX )
-COLOR="#6E835C"
+# Environment Configuration
+COLOR="#6E835C"  # Color border for screenshot (HEX)
 
-# Environment variables
+# Environment Variables
 export QT_QPA_PLATFORMTHEME="gtk3"
 export VISUAL="nvim"
 export EDITOR="geany"
@@ -28,21 +16,21 @@ export TERM="alacritty"
 export HISTCONTROL="ignoredups:erasedups"
 export XCURSOR_THEME="oreo_white_cursors xclock"
 
-# Set other env
+# XDG Base Directory Specification
 export XDG_CONFIG_HOME="$HOME/.config"
 export XDG_DATA_HOME="$HOME/.local/share"
 export XDG_CACHE_HOME="$HOME/.cache"
 
-# Xdeb for voidlinux
+# Xdeb for Void Linux
 export XDEB_OPT_DEPS="true"
 export XDEB_OPT_SYNC="true"
 export XDEB_OPT_WARN_CONFLICT="true"
 export XDEB_OPT_FIX_CONFLICT="true"
 
-# Nyoom
+# Neovim Configuration
 export NVIM_APPNAME="nvim"
 
-# Path my script
+# PATH Configuration
 export PATH="$DIR/nvim/bin:$HOME/.local/bin:$HOME/bin:$PATH"
 
 # Development Tools
@@ -56,7 +44,7 @@ export PIP_CONFIG_FILE="$HOME/.config/pip/pip.conf"
 export NODE_PATH="$HOME/.node_modules_global/lib/node_modules:$NODE_PATH"
 export PATH="$HOME/.node_modules_global/bin:$PATH"
 export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+[[ -s "$NVM_DIR/nvm.sh" ]] && \. "$NVM_DIR/nvm.sh"
 
 # Java
 export JAVA_HOME="/usr/lib/jvm/java-11-openjdk"
@@ -84,16 +72,15 @@ export GIT_PAGER="less -F -X"
 export DOCKER_BUILDKIT=1
 export DOCKER_DEFAULT_PLATFORM="linux/amd64"
 
-# Database
+# Database (Optional)
 # export PGUSER="your_pg_user"
 # export PGHOST="localhost"
 # export PGPORT="5432"
 # export PGDATABASE="your_pg_database"
 # export MYSQL_HOME="$HOME/.my.cnf"
-# export MYSQL_PWD="your_mysql_password" 
-# For convenience, consider using a .my.cnf file instead
+# export MYSQL_PWD="your_mysql_password"
 
-# Optional: Other configurations
+# Locale and Pager
 export LANG="en_US.UTF-8"
 export LC_ALL="en_US.UTF-8"
 export PAGER="less"
