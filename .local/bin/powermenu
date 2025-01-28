@@ -1,118 +1,115 @@
-#!/bin/bash
-# shellcheck disable=SC2199
-# shellcheck disable=SC2086
-# shellcheck source=/dev/null
-#
-# Copyright (C) 2024-02 pyranix <pyranix@proton.me>
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+#!/usr/bin/env bash
+# shellcheck disable=SC2199,SC2162
 
-SCRIPT_NAME="powermenu"
+SCRIPT_NAME="󰒓 Power Menu"
+CONFIRM_TIMEOUT=5000  # milliseconds
+ROFI_THEME="window {width: 15%;} listview {lines: 5;}"
 
-# Power menu options
-options=(" Poweroff" " Reboot" " Sleep" " Hibernate" " Log Out")
+declare -A ACTIONS=(
+    ["󰐥 Poweroff"]="system_poweroff"
+    ["󰜉 Reboot"]="system_reboot"
+    ["󰤄 Suspend"]="system_suspend"
+    ["󰤁 Hibernate"]="system_hibernate"
+    ["󰍃 Lock"]="lock_screen"
+    ["󰿅 Logout"]="user_logout"
+)
 
-# Function to check the init system
+declare -A COMMANDS=()
+declare -A ICONS=(
+    [confirm]="󰄬" [success]="󰄬" [error]="󰚌" 
+    [warning]="󰚌" [cancel]="󰅖"
+)
+
 detect_init_system() {
-  if command -v systemctl &> /dev/null; then
-    init_system="systemctl"
-  elif command -v loginctl &> /dev/null; then
-    init_system="loginctl"
-  else
-    dunstify -u low "Unable to detect init system. Exiting."
-    exit 1
-  fi
+    [[ -x /sbin/openrc-init ]] && { echo "openrc"; return; }
+    command -v systemctl &>/dev/null && { echo "systemd"; return; }
+    command -v loginctl &>/dev/null && { echo "logind"; return; }
+    exit_error "No supported init system found"
 }
 
-# Determine init system
-detect_init_system
-
-# Set commands based on init system
-case $init_system in
-  "systemctl")
-    power_command="systemctl poweroff"
-    reboot_command="systemctl reboot"
-    sleep_command="systemctl suspend"
-    hibernate_command="systemctl hibernate"
-    logout_command="systemctl exit"
-    ;;
-  "loginctl")
-    power_command="loginctl poweroff"
-    reboot_command="loginctl reboot"
-    sleep_command="loginctl suspend"
-    hibernate_command="loginctl hibernate"
-    logout_command="loginctl terminate-session"
-    ;;
-  *)
-    dunstify -u low "Unsupported init system. Exiting."
-    exit 1
-    ;;
-esac
-
-# Function to confirm the action
-confirm_option() {
-  confirm=$(echo -e "Yes\nNo" | rofi -dmenu -i -p "Are you sure?" -columns 1 -width 10)
-  [[ "$confirm" == "Yes" ]]
+setup_commands() {
+    local init_system=$1
+    case $init_system in
+        systemd)
+            COMMANDS=(
+                [system_poweroff]="systemctl poweroff"
+                [system_reboot]="systemctl reboot"
+                [system_suspend]="systemctl suspend"
+                [system_hibernate]="systemctl hibernate"
+                [user_logout]="loginctl terminate-session ${XDG_SESSION_ID-}"
+            ) ;;
+        logind|openrc)
+            COMMANDS=(
+                [system_poweroff]="loginctl poweroff"
+                [system_reboot]="loginctl reboot"
+                [system_suspend]="loginctl suspend"
+                [system_hibernate]="loginctl hibernate"
+                [user_logout]="loginctl terminate-session ${XDG_SESSION_ID-}"
+            ) ;;
+    esac
 }
 
-# Main script
+lock_screen() {
+    local lockers=(
+        "swaylock -f -c 000000"
+        "i3lock -c 000000 -n"
+        "loginctl lock-session"
+        "xdg-screensaver lock"
+    )
+    
+    for locker in "${lockers[@]}"; do
+        command -v ${locker%% *} &>/dev/null && {
+            $locker
+            return $?
+        }
+    done
+    
+    exit_error "No screen locker found"
+}
 
-selected_option=$(printf '%s\n' "${options[@]}" | rofi -dmenu -i -p "$SCRIPT_NAME" -columns 1 -width 20) || exit 1
+exit_error() {
+    dunstify -u critical -t "$CONFIRM_TIMEOUT" \
+        "${ICONS[error]} ${1:-Critical Error}"
+    exit 1
+}
 
-case $selected_option in
-    " Poweroff")
-        if confirm_option; then
-            dunstify -i "$HOME/.notify/images/power-button.png" "Powering off..."
-            $power_command
-        else
-            dunstify -i "$HOME/.notify/images/multiply.png" "Power off canceled"
-        fi
-        ;;
-    " Reboot")
-        if confirm_option; then
-            dunstify -i "$HOME/.notify/images/refresh.png" "Rebooting..."
-            $reboot_command
-        else
-            dunstify -i "$HOME/.notify/images/multiply.png" "Reboot canceled"
-        fi
-        ;;
-    " Sleep")
-        if confirm_option; then
-            dunstify -i "$HOME/.notify/images/sleep.png" "Putting system to sleep..."
-            $sleep_command
-        else
-            dunstify -i "$HOME/.notify/images/multiply.png" "Sleep canceled"
-        fi
-        ;;
-    " Hibernate")
-        if confirm_option; then
-            dunstify -i "$HOME/.notify/images/suspended.png" "Hibernating..."
-            $hibernate_command
-        else
-            dunstify -i "$HOME/.notify/images/multiply.png" "Hibernation canceled"
-        fi
-        ;;
-    " Log Out")
-        if confirm_option; then
-            dunstify -i "$HOME/.notify/images/arrow.png" "Logging out..."
-            $logout_command
-        else
-            dunstify -i "$HOME/.notify/images/multiply.png" "Log out canceled"
-        fi
-        ;;
-    *)
-        dunstify -u low "Invalid option"
-        ;;
-esac
+confirm_action() {
+    local action=$1
+    local response=$(printf "󰌾 Confirm\n󰅖 Cancel" | rofi -dmenu -i -p "${ICONS[warning]} $action" -theme-str "$ROFI_THEME")
+    [[ "$response" == "󰌾 Confirm" ]]
+}
+
+handle_action() {
+    local action=$1
+    case $action in
+        system_*|user_*)
+            ${COMMANDS[$action]} && {
+                dunstify -u normal -t "$CONFIRM_TIMEOUT" \
+                    "${ICONS[success]} ${action//_/ } initiated"
+                return 0
+            } ;;
+        lock_screen)
+            lock_screen ;;
+        *)
+            exit_error "Invalid action: $action" ;;
+    esac
+}
+
+show_menu() {
+    local selection
+    selection=$(printf "%s\n" "${!ACTIONS[@]}" | rofi -dmenu -i -p "$SCRIPT_NAME" -theme-str "$ROFI_THEME")
+    [[ -z "$selection" ]] && exit 0
+
+    local action=${ACTIONS[$selection]}
+    confirm_action "${selection#* }" && handle_action "$action" || {
+        dunstify -u low -t "$CONFIRM_TIMEOUT" \
+            "${ICONS[cancel]} Operation canceled"
+    }
+}
+
+# Main Execution
+init_system=$(detect_init_system)
+setup_commands "$init_system"
+show_menu
 
 exit 0
