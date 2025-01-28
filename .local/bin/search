@@ -1,6 +1,5 @@
 #!/bin/bash
 
-# Define an associative array of browsers with corresponding search URLs
 declare -A browsers=(
     ["Google"]="https://www.google.com/search?q="
     ["YouTube"]="https://www.youtube.com/results?search_query="
@@ -15,40 +14,22 @@ declare -A browsers=(
     ["CodePen.io"]="https://codepen.io/search/pens?q="
 )
 
-# Create a string of browser names for rofi
-browser_options=$(printf "%s\n" "${!browsers[@]}")
+# Select browser using rofi
+selected_browser=$(printf "%s\n" "${!browsers[@]}" | rofi -dmenu -p "Select browser:")
 
-# Use rofi to display a menu for selecting a browser
-selected_browser=$(echo "$browser_options" | rofi -dmenu -p "Select a browser:")
+# Exit if no browser selected or invalid selection
+[[ -z "$selected_browser" || ! -v browsers["$selected_browser"] ]] && exit 0
 
-# Exit if no browser is selected (user pressed Escape)
-if [ -z "$selected_browser" ]; then
-    exit 0
-fi
+# Get search term
+search_term=$(rofi -dmenu -p "Search term:")
 
-# Use rofi to prompt for a search term
-search_term=$(rofi -dmenu -p "Enter search term:")
+# Exit if no search term entered
+[[ -z "$search_term" ]] && exit 0
 
-# Exit if no search term is entered (user pressed Escape)
-if [ -z "$search_term" ]; then
-    exit 0
-fi
+# Construct URL
+base_url="${browsers["$selected_browser"]}"
+encoded_term="${search_term// /+}"
+full_url="$base_url$encoded_term"
 
-# Get the URL corresponding to the selected browser
-search_url=${browsers[$selected_browser]}
-
-# Encode the search term for URL
-encoded_search_term=$(echo "$search_term" | sed 's/ /+/g')
-
-# Construct the full URL with the search term
-full_url="${search_url}${encoded_search_term}"
-
-# Open the selected browser with the constructed URL
-case "$selected_browser" in
-    "Google" | "DuckDuckGo" | "Yandex" | "YouTube" | "TikTok" | "Mangadex" | "GitHub" | "Spotify" | "W3Schools" | "StackOverflow" | "CodePen.io")
-        xdg-open "$full_url" ;;
-    *)
-        echo "Unsupported browser." ;;
-esac
-
-exit 0
+# Open in default browser
+xdg-open "$full_url"
