@@ -1,107 +1,149 @@
-#!/bin/bash
-# shellcheck disable=SC2199
-# shellcheck disable=SC2086
-# shellcheck source=/dev/null
-#
-# Copyright (C) 2024-02 pyranix <pyranix@proton.me>
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Configuration
-readonly NOTIFY_ICON=""   # Default notification icon
-readonly TIMER_ICON=""    # Timer icon for notifications
+# ========================
+#   CONFIGURATION
+# ========================
+readonly NOTIFY_ICON=""          # Notification icon
+readonly TIMER_ICON=""           # Timer icon
 readonly PICTURES_DIR="${XDG_PICTURES_DIR:-$HOME/Pictures}/Screenshots"
-readonly TEMP_DIR=$(mktemp -d)
+readonly SCREENSHOT_PREFIX="Screenshot"  # Filename prefix
+readonly SHADOW_OPACITY=25        # Shadow: 25% opacity
+readonly SHADOW_BLUR=30           # Shadow: 30px blur
+readonly SHADOW_OFFSET="+0+0"     # Shadow: No offset
+readonly TIMER_DELAY=0.5          # Capture delay for fullscreen
+readonly ROFI_PROMPT="Screenshot" # Rofi prompt text
+readonly ROFI_OPTIONS=("full" "5" "10" "window" "area")  # Selection options
 
-# Function to display a notification with image attachment
-notify_with_image() {
-  local title="$1"
-  local message="$2"
-  local image_path="$3"
+# ========================
+#   INITIALIZATION
+# ========================
+TEMP_DIR=$(mktemp -d) && readonly TEMP_DIR
+trap 'rm -rf "$TEMP_DIR"' EXIT
 
-  if [[ ! -f "$image_path" ]]; then
-    echo "Error: Image file not found: $image_path"
-    return 1
-  fi
-
-  dunstify --replace=1 -u low -i "$image_path" "$title" "$message"
+# ========================
+#   ERROR HANDLING
+# ========================
+die() {
+  local message="$1"
+  dunstify -u critical "Screenshot Error" "$message"
+  exit 1
 }
 
-# Countdown function with notifications
-countdown() {
-  local duration=$1
-  while (( duration > 0 )); do
-    dunstify --replace=1 -u low -i "$TIMER_ICON" "Taking shot in:" "$duration"
-    sleep 1
-    (( duration-- ))
+# ========================
+#   DEPENDENCY CHECK
+# ========================
+check_dependencies() {
+  local missing=()
+  local deps=("maim" "convert" "xclip" "rofi" "dunstify" "xdotool")
+
+  for cmd in "${deps[@]}"; do
+    command -v "$cmd" >/dev/null || missing+=("$cmd")
   done
+
+  ((${#missing[@]})) && die "Missing dependencies: ${missing[*]}"
 }
 
-# Take a screenshot and process it
-take_and_process_screenshot() {
-  local temp_file="$TEMP_DIR/temp.png"
-  local file="$PICTURES_DIR/Screenshot_$(date +%Y-%m-%d-%H-%M-%S).png"
-  local option="$1"
+# ========================
+#   DIRECTORY MANAGEMENT
+# ========================
+create_workspace() {
+  mkdir -p "$PICTURES_DIR" || die "Failed to create $PICTURES_DIR"
+  [[ -w "$PICTURES_DIR" ]] || die "No write permissions in $PICTURES_DIR"
+}
 
-  case $option in
-    "full")
-      sleep 0.5
-      maim -u -f png "$temp_file"
-      ;;
-    "window")
-      maim -i "$(xdotool getactivewindow)" "$temp_file"
-      ;;
-    "area")
-      maim -s "$temp_file"
-      ;;
-    *)
-      return 1
-      ;;
-  esac
+# ========================
+#   NOTIFICATION SYSTEM
+# ========================
+notify_success() {
+  local image_path="$1"
+  dunstify --replace=1 -u low -i "$image_path" \
+    "Screenshot Taken" "Image copied to clipboard"
+}
 
-  convert "$temp_file" \( +clone -background black -shadow 25x30+0+0 \) +swap -background "$COLOR" -layers merge "$file"
-  xclip -selection clipboard -t image/png -i "$file"
-  notify_with_image "Screenshot Taken" "Image copied to clipboard" "$file"
+# ========================
+#   SCREENSHOT PROCESSING
+# ========================
+generate_filename() {
+  echo "${PICTURES_DIR}/${SCREENSHOT_PREFIX}_$(date +%Y-%m-%d-%H-%M-%S).png"
+}
 
+add_shadow_effect() {
+  convert "$1" \
+    \( +clone -background black -shadow "${SHADOW_OPACITY}x${SHADOW_BLUR}${SHADOW_OFFSET}" \) \
+    +swap -background "${BG_COLOR:-"#FFFFFF"}" -layers merge +repage \
+    "$2" || die "Image processing failed"
+}
+
+# ========================
+#   CAPTURE FUNCTIONS
+# ========================
+capture_fullscreen() {
+  sleep "$TIMER_DELAY"
+  maim -u -f png "$1"
+}
+
+capture_window() {
+  maim -i "$(xdotool getactivewindow)" "$1"
+}
+
+capture_area() {
+  maim -s "$1"
+}
+
+# ========================
+#   MAIN WORKFLOW
+# ========================
+screenshot_workflow() {
+  local capture_type="$1"
+  local temp_file="${TEMP_DIR}/capture.png"
+  local final_file=$(generate_filename)
+
+  case "$capture_type" in
+    full)  capture_fullscreen "$temp_file" ;;
+    window) capture_window "$temp_file" ;;
+    area)   capture_area "$temp_file" ;;
+    *)      die "Invalid capture type: $capture_type" ;;
+  esac || die "Capture failed"
+
+  add_shadow_effect "$temp_file" "$final_file"
+  xclip -selection clipboard -t image/png -i "$final_file" || die "Clipboard copy failed"
+  notify_success "$final_file"
   rm "$temp_file"
 }
 
-# Main
-create_directory() {
-  [[ -d "$1" ]] || mkdir -p "$1" || { echo "Error creating directory: $1"; exit 1; }
+countdown_workflow() {
+  local delay="$1"
+  while (( delay > 0 )); do
+    dunstify --replace=1 -u low -i "$TIMER_ICON" "Taking shot in:" "$delay"
+    sleep 1
+    (( delay-- ))
+  done
 }
 
-create_directory "$PICTURES_DIR"
+# ========================
+#   MAIN EXECUTION
+# ========================
+main() {
+  check_dependencies
+  create_workspace
+  [[ -f "$HOME/.envvars" ]] && source "$HOME/.envvars"
 
-if [[ -f "$HOME/.envvars" ]]; then
-  source "$HOME/.envvars"
-fi
+  local selected=$(printf "%s\n" "${ROFI_OPTIONS[@]}" | \
+    rofi -dmenu -i -p "$ROFI_PROMPT" -columns 1 -width 30)
 
-COLOR="${COLOR:-#FFFFFF}"  # Default color if not set in .envvars
+  case "$selected" in
+    "5"|"10") 
+      countdown_workflow "$selected"
+      screenshot_workflow "full"
+      ;;
+    "full"|"window"|"area")
+      screenshot_workflow "$selected"
+      ;;
+    *)
+      exit 0  # Normal exit for canceled selection
+      ;;
+  esac
+}
 
-selected_option=$(printf '%s\n' "full" "5" "10" "window" "area" | rofi -dmenu -i -p "Screenshot" -columns 1 -width 30) || exit 1
-
-case $selected_option in
-  "full" | "window" | "area")
-    take_and_process_screenshot "$selected_option"
-    ;;
-  "5" | "10")
-    countdown "$selected_option"
-    take_and_process_screenshot "full"
-    ;;
-  *)
-    exit 1
-    ;;
-esac
-
-exit 0
+main
