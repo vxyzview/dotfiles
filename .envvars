@@ -6,7 +6,7 @@
 # Licensed under the Apache License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0)
 
 # Environment Configuration
-COLOR="#6E835C"  # Color border for screenshot (HEX)
+BG_COLOR="#6E835C"  # Color border for screenshot (HEX)
 
 # Environment Variables
 export QT_QPA_PLATFORMTHEME="gtk3"
