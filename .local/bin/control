@@ -1,109 +1,129 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
-# Copyright (C) 2024-02 pyranix <pyranix@proton.me>
+# System Control Script - Manage brightness, volume, and mute state
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# Copyright (C) 2024 pyranix <pyranix@proton.me>
+# Licensed under Apache License 2.0
 
 # Constants
-NOTIFY_ID=424242
-STACK_TAG=progress
-ICON_PATH_VOLUME="$HOME/.notify/images/music.png"
-ICON_PATH_MUTE="$HOME/.notify/images/mute.png"
-ICON_PATH_UNMUTE="$HOME/.notify/images/music.png"
-ICON_PATH_BRIGHTNESS="$HOME/.notify/images/smart-bulb.png"
+readonly NOTIFY_ID=424242
+readonly STACK_TAG="system-control"
+readonly ICON_VOLUME="$HOME/.notify/images/music.png"
+readonly ICON_MUTE="$HOME/.notify/images/mute.png"
+readonly ICON_BRIGHTNESS="$HOME/.notify/images/smart-bulb.png"
 
-# Function to show notification using dunst with progress bar
+# Show notification with progress bar
 show_notification() {
     local title="$1"
-    local message="$2"
-    local current_level=""
-    local icon_path=""
+    local state="$2"
+    local icon="$3"
+    local level="$4"
 
-    case "$title" in
-        "Brightness")
-            current_level=$(get_brightness)
-            icon_path="$ICON_PATH_BRIGHTNESS"
-            ;;
-        *)
-            current_level=$(get_volume)
-            icon_path="$ICON_PATH_VOLUME"
-            ;;
-    esac
-
-    dunstify -u low -i "$icon_path" -r "$NOTIFY_ID" -h int:value:"$current_level" -h string:x-dunst-stacktag:"$STACK_TAG" "$title" "$message Current: $current_level"
+    dunstify -u low -i "$icon" -r "$NOTIFY_ID" \
+        -h "int:value:$level" \
+        -h "string:x-dunst-stacktag:$STACK_TAG" \
+        "$title" "${state}: ${level}%"
 }
 
-# Function to get current brightness as a percentage of maximum brightness
+# Get current brightness percentage
 get_brightness() {
-    local current_brightness=$(brightnessctl g)
-    local max_brightness=$(brightnessctl m)
-    
-    # Calculate the brightness percentage
-    local brightness_percentage=$(( (current_brightness * 100) / max_brightness ))
-
-    echo "$brightness_percentage"
+    brightnessctl -m | awk -F, '{gsub(/%/, "", $4); print $4}'
 }
 
-# Function to get current volume
+# Get current volume percentage (average of channels)
 get_volume() {
-    pactl list sinks | awk '/Volume:/{print $5; exit}'
+    pactl get-sink-volume @DEFAULT_SINK@ | 
+    awk '{
+        gsub(/%/, "", $5); 
+        gsub(/%/, "", $12); 
+        print ($5 + $12)/2
+    }' | xargs printf "%.0f"
 }
 
-# Function to change screen brightness
-change_brightness() {
-    brightnessctl s "$1" && show_notification "Brightness" "Now"
+# Validate numeric input argument
+validate_number() {
+    [[ "$1" =~ ^[+-]?[0-9]+([.][0-9]+)?$ ]] || {
+        echo >&2 "Invalid numeric value: $1"
+        exit 2
+    }
 }
 
-# Function to change volume
-change_volume() {
-    pactl set-sink-volume @DEFAULT_SINK@ "$1%" && show_notification "Volume" "Now"
+# Change brightness with validation
+set_brightness() {
+    validate_number "$1"
+    brightnessctl set "$1" >/dev/null || {
+        echo >&2 "Failed to adjust brightness"
+        exit 3
+    }
+    show_notification "Brightness" "Adjusted" "$ICON_BRIGHTNESS" "$(get_brightness)"
 }
 
-# Function to toggle mute/unmute volume
+# Change volume with validation
+set_volume() {
+    validate_number "$1"
+    pactl set-sink-volume @DEFAULT_SINK@ "${1}%" || {
+        echo >&2 "Failed to adjust volume"
+        exit 4
+    }
+    show_notification "Volume" "Adjusted" "$ICON_VOLUME" "$(get_volume)"
+}
+
+# Toggle mute state
 toggle_mute() {
-    pactl set-sink-mute @DEFAULT_SINK@ toggle
-    local is_muted=$(pactl list sinks | awk '/Mute/{print $2; exit}')
-
-    if [ "$is_muted" = "yes" ]; then
-        show_notification "Control" "Muted" "$ICON_PATH_MUTE"
+    pactl set-sink-mute @DEFAULT_SINK@ toggle || {
+        echo >&2 "Failed to toggle mute state"
+        exit 5
+    }
+    
+    local status="$(pactl get-sink-mute @DEFAULT_SINK@ | awk '{print $2}')"
+    if [[ "$status" == "yes" ]]; then
+        show_notification "Audio" "Muted" "$ICON_MUTE" 0
     else
-        show_notification "Control" "Unmuted" "$ICON_PATH_UNMUTE"
+        show_notification "Audio" "Unmuted" "$ICON_VOLUME" "$(get_volume)"
     fi
 }
 
-# Main script
-case "$#" in
-    2)
-        case "$1" in
-            brightness)
-                change_brightness "$2"
-                ;;
-            volume)
-                change_volume "$2"
-                ;;
-            mute)
-                toggle_mute
-                ;;
-            *)
-                echo "Unknown option: $1"
-                exit 1
-                ;;
-        esac
-        ;;
-    *)
-        echo "Usage: $0 <brightness|volume|mute> <value>"
-        exit 1
-        ;;
-esac
+# Show usage information
+usage() {
+    cat <<EOF
+System Control - Manage brightness and audio
 
+Usage: $0 <command> [value]
+
+Commands:
+  brightness <value>    Set brightness percentage (e.g., 50, +10, -5)
+  volume <value>        Set volume percentage (e.g., 75, +5, -10)
+  mute                  Toggle mute state
+
+Examples:
+  $0 brightness 70      # Set brightness to 70%
+  $0 volume +5          # Increase volume by 5%
+  $0 mute               # Toggle mute state
+EOF
+}
+
+# Main control flow
+main() {
+    [[ $# -eq 0 ]] && { usage; exit 1; }
+
+    case "$1" in
+        brightness|volume)
+            [[ -z "$2" ]] && { echo >&2 "Missing value for $1"; exit 1; }
+            "set_${1}" "$2"
+            ;;
+        mute)
+            toggle_mute
+            ;;
+        -h|--help)
+            usage
+            ;;
+        *)
+            echo >&2 "Invalid command: $1"
+            usage
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"
 exit 0
