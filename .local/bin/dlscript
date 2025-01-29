@@ -1,35 +1,103 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# Check if xclip is installed
-if ! command -v xclip &> /dev/null; then
-    echo "xclip is not installed. Please install it and try again."
-    exit 1
-fi
+# Clean Download Manager
+# Features: URL validation, parallel downloads, config options, checksum verification
 
-# Check if a URL is provided as an argument
-if [ -z "$1" ]; then
-  # If no URL is provided, try to get it from the clipboard
-  URL=$(xclip -o -selection clipboard)
-  
-  # Check if the clipboard is empty
-  if [ -z "$URL" ]; then
-    echo "Usage: ./dlscript <url> or copy a URL to the clipboard."
-    exit 1
-  else
-    echo "Using URL from clipboard: $URL"
-  fi
-else
-  # If a URL is provided as an argument, use it
-  URL="$1"
-fi
+set -eo pipefail
 
-# Optimize aria2c for faster downloads
-# -x16: use up to 16 connections per download
-aria2c -x16 "$URL"
+# Configuration
+declare -A CONFIG=(
+    [MAX_CONNS]=16
+    [DOWNLOAD_DIR]="$HOME/Downloads"
+    [LOG_FILE]="/tmp/clean-dl.log"
+    [TRIES]=5
+    [TIMEOUT]=300
+)
 
-# Check if the download was successful
-if [ $? -eq 0 ]; then
-  echo "Download completed: $URL"
-else
-  echo "Error downloading: $URL"
-fi
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+NC='\033[0m'
+
+error() { echo -e "${RED}Error: $1${NC}" >&2; exit 1; }
+info() { echo -e "${GREEN}$1${NC}"; }
+warning() { echo -e "${YELLOW}Warning: $1${NC}"; }
+
+validate_url() {
+    local url_re='^(https?|ftp)://[-A-Za-z0-9\+&@#/%?=~_|!:,.;]*[-A-Za-z0-9\+&@#/%=~_|]'
+    [[ "$1" =~ $url_re ]] || error "Invalid URL format: $1"
+}
+
+check_deps() {
+    local deps=("$@")
+    for dep in "${deps[@]}"; do
+        command -v "$dep" >/dev/null 2>&1 || error "Missing dependency: $dep"
+    done
+}
+
+load_config() {
+    # Load from environment variables
+    for key in "${!CONFIG[@]}"; do
+        local env_var="DL_${key}"
+        [[ -n "${!env_var}" ]] && CONFIG["$key"]="${!env_var}"
+    done
+
+    mkdir -p "${CONFIG[DOWNLOAD_DIR]}" || error "Can't create download directory"
+}
+
+fetch_url() {
+    if [[ -n "$1" ]]; then
+        URL="$1"
+    else
+        URL=$(xclip -o -selection clipboard 2>/dev/null) || error "No URL in clipboard"
+        info "Using clipboard URL: ${URL}"
+    fi
+
+    validate_url "$URL"
+}
+
+download() {
+    local aria_args=(
+        --dir="${CONFIG[DOWNLOAD_DIR]}"
+        --max-connection-per-server="${CONFIG[MAX_CONNS]}"
+        --max-tries="${CONFIG[TRIES]}"
+        --timeout="${CONFIG[TIMEOUT]}"
+        --optimize-concurrent-downloads
+        --check-certificate=true
+        --auto-file-renaming=false
+        --log="${CONFIG[LOG_FILE]}"
+        --summary-interval=0
+        --file-allocation=none
+    )
+
+    info "Starting download..."
+    aria2c "${aria_args[@]}" "$URL" || error "Download failed"
+
+    verify_checksum
+}
+
+verify_checksum() {
+    local checksum_file
+    checksum_file=$(find "${CONFIG[DOWNLOAD_DIR]}" -maxdepth 1 -name '*.sha256' -print -quit)
+    
+    if [[ -n "$checksum_file" ]]; then
+        info "Verifying checksum..."
+        (cd "${CONFIG[DOWNLOAD_DIR]}" && sha256sum -c "$checksum_file") || error "Checksum verification failed"
+    fi
+}
+
+cleanup() {
+    info "Cleaning up..."
+    rm -f "${CONFIG[LOG_FILE]}"
+}
+
+main() {
+    trap cleanup EXIT
+    check_deps aria2c xclip
+    load_config
+    fetch_url "$@"
+    download
+}
+
+main "$@"
