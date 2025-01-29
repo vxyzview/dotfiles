@@ -1,83 +1,122 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# Dependencies: fzf, ffmpeg, mpv, yt-dlp, aria2c
+set -euo pipefail
 
-# Check for dependencies
-for cmd in fzf ffmpeg mpv yt-dlp aria2c; do
-    if ! command -v $cmd &>/dev/null; then
-        echo "$cmd is required but not installed. Aborting."
+# Constants
+declare -A PLATFORM_URLS=(
+    [youtube]="ytsearch${MAX_RESULTS}:{}"
+    [bilibili]="https://www.bilibili.com/video/{}"
+    [tiktok]="https://www.tiktok.com/search?q={}"
+    [twitch]="https://www.twitch.tv/search?term={}"
+)
+MAX_RESULTS=20
+FZF_OPTS=("--layout=reverse" "--height=40%" "--exit-0")
+
+# Dependency check
+check_dependency() {
+    for cmd in "$@"; do
+        if ! command -v "$cmd" &>/dev/null; then
+            printf "\033[31mError: Missing required dependency '%s'\033[0m\n" "$cmd" >&2
+            exit 1
+        fi
+    done
+}
+check_dependency fzf ffmpeg mpv yt-dlp aria2c jq
+
+url_encode() {
+    local string="${1}"
+    local encoded
+    encoded=$(curl -s -o /dev/null -w %{url_effective} --data-urlencode "$string" "")
+    printf "%s" "${encoded#/?}"
+}
+
+search_and_handle_video() {
+    local platform="$1"
+    local query="$2"
+    local action="$3"
+    local url_pattern formatted_url
+
+    # Validate platform
+    if [[ ! -v PLATFORM_URLS[$platform] ]]; then
+        printf "\033[31mUnsupported platform: %s\033[0m\n" "$platform" >&2
         exit 1
     fi
-done
 
-# Function to search, download, and play videos
-search_and_play_or_download() {
-    platform="$1"
-    query="$2"
-    action="$3"
-    max_results=20
-    next_page=1
+    # Format platform URL
+    case "$platform" in
+        youtube) formatted_url="${PLATFORM_URLS[$platform]//\{\}/$MAX_RESULTS:$query}" ;;
+        *) formatted_url="${PLATFORM_URLS[$platform]//\{\}/$(url_encode "$query")}" ;;
+    esac
 
-    case $platform in
-        youtube)
-            search_cmd="yt-dlp --flat-playlist -J 'ytsearch${max_results}:${next_page} $query'"
+    # Get search results
+    local results
+    results=$(yt-dlp --flat-playlist -J "$formatted_url" 2>/dev/null | 
+        jq -r '.entries[] | "\(.title) | \(.id)"')
+
+    [[ -z "$results" ]] && { printf "\033[33mNo results found\033[0m\n" >&2; exit 1; }
+
+    # Select video
+    local selected
+    selected=$(fzf "${FZF_OPTS[@]}" --prompt="Select video: " <<< "$results") || exit 0
+
+    local video_id
+    video_id=$(awk -F'|' '{gsub(/ /, "", $2); print $2}' <<< "$selected")
+
+    # Get formats
+    local formats
+    formats=$(yt-dlp -F "$video_id" | awk '/^[0-9]+/{printf "%-6s | %-9s | %s\n", $1, $2, $4}')
+
+    [[ -z "$formats" ]] && { printf "\033[33mNo formats available\033[0m\n" >&2; exit 1; }
+
+    # Select format
+    local format_choice
+    format_choice=$(fzf "${FZF_OPTS[@]}" --prompt="Select format: " <<< "$formats") || exit 0
+
+    local format_id
+    format_id=$(awk '{print $1}' <<< "$format_choice")
+
+    # Handle action
+    case "$action" in
+        play)
+            printf "\033[32mPlaying %s...\033[0m\n" "$video_id"
+            mpv --ytdl-format="$format_id" "$video_id"
             ;;
-        bilibili)
-            search_cmd="yt-dlp --flat-playlist -J 'https://www.bilibili.com/video/$(echo $query | sed 's/ /+/g')'"
-            ;;
-        tiktok)
-            search_cmd="yt-dlp --flat-playlist -J 'https://www.tiktok.com/search?q=$(echo $query | sed 's/ /%20/g')'"
-            ;;
-        twitch)
-            search_cmd="yt-dlp --flat-playlist -J 'https://www.twitch.tv/search?term=$(echo $query | sed 's/ /%20/g')'"
+        download)
+            printf "\033[32mDownloading %s...\033[0m\n" "$video_id"
+            yt-dlp --format "$format_id" --external-downloader aria2c "$video_id"
             ;;
         *)
-            echo "Unsupported platform: $platform"
+            printf "\033[31mInvalid action: %s\033[0m\n" "$action" >&2
             exit 1
             ;;
     esac
-
-    # Fetch the search results and list them
-    results=$(eval $search_cmd | jq -r '.entries[] | .title + " | " + .id' | fzf --layout=reverse --height 40% --prompt="Select video: ")
-
-    if [ -z "$results" ]; then
-        echo "No video selected."
-        exit 0
-    fi
-
-    # Extract the video ID from the selected result
-    video_id=$(echo "$results" | awk -F'|' '{print $2}' | tr -d ' ')
-
-    # Get available formats for the selected video
-    formats=$(yt-dlp -F "$video_id" | awk '/^[0-9]+/ {print $1 " | " $2 " | " $4}' | fzf --layout=reverse --height 40% --prompt="Select format: ")
-
-    if [ -z "$formats" ]; then
-        echo "No format selected."
-        exit 0
-    fi
-
-    format_id=$(echo "$formats" | awk '{print $1}')
-
-    if [ "$action" == "download" ]; then
-        # Download the selected video with the selected format using aria2c
-        echo "Downloading video..."
-        yt-dlp --format "$format_id" --external-downloader aria2c "$video_id"
-    else
-        # Play the selected video with the selected format in mpv
-        echo "Playing video..."
-        mpv --ytdl-format="$format_id" "$video_id"
-    fi
 }
 
-# Main script to parse input arguments and call the function
-if [ $# -lt 3 ]; then
-    echo "Usage: $0 <youtube|bilibili|tiktok|twitch> <play|download> <search query>"
-    exit 1
-fi
+# Main
+print_usage() {
+    cat <<EOF
+Usage: ${0##*/} <platform> <action> <query>
+
+Supported platforms:
+  youtube       - YouTube videos
+  bilibili      - Bilibili videos
+  tiktok        - TikTok videos
+  twitch        - Twitch streams
+
+Actions:
+  play          - Stream video with mpv
+  download      - Download video
+
+Examples:
+  ${0##*/} youtube play "linux tutorial"
+  ${0##*/} tiktok download "cat videos"
+EOF
+}
+
+(( $# < 3 )) && { print_usage >&2; exit 1; }
 
 platform="$1"
 action="$2"
 shift 2
-query="$*"
 
-search_and_play_or_download "$platform" "$query" "$action"
+search_and_handle_video "${platform,,}" "$*" "$action"
