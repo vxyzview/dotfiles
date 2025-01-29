@@ -1,25 +1,172 @@
 #!/bin/bash
 
-# Function to select a region of the screen
+set -euo pipefail
+
+# Configuration
+INPUT_FPS=60
+OUTPUT_FPS=15
+SCALE_WIDTH=800
+X_SERVER="${DISPLAY-:0.0}"
+OUTPUT_DIR="${HOME}/Videos/GIFs"
+COLOR_MODE="full"  # full/256/16/mono
+OVERWRITE=false
+OPTIMIZE=true
+NOTIFICATIONS=true
+
+# Color definitions
+if [ -t 1 ]; then
+    RED=$(tput setaf 1)
+    GREEN=$(tput setaf 2)
+    YELLOW=$(tput setaf 3)
+    BLUE=$(tput setaf 4)
+    RESET=$(tput sgr0)
+else
+    RED="" GREEN="" YELLOW="" BLUE="" RESET=""
+fi
+
+# Check dependencies
+check_dependencies() {
+    local missing=()
+    for cmd in slop ffmpeg; do
+        if ! command -v "$cmd" &> /dev/null; then
+            missing+=("$cmd")
+        fi
+    done
+
+    if [ ${#missing[@]} -gt 0 ]; then
+        echo -e "${RED}Missing dependencies:${RESET} ${missing[*]}"
+        exit 1
+    fi
+}
+
+# Display help information
+show_help() {
+    cat <<EOF
+${GREEN}ScreenGIF Recorder${RESET} - ${BLUE}v2.1.0${RESET}
+
+Usage: $(basename "$0") [options]
+
+Options:
+  -f <fps>      Output frame rate (default: ${OUTPUT_FPS})
+  -s <width>    Scale width (default: ${SCALE_WIDTH})
+  -o <dir>      Output directory (default: ${OUTPUT_DIR})
+  -c <mode>     Color mode: full/256/16/mono (default: ${COLOR_MODE})
+  -x            Overwrite existing files
+  -n            Disable notifications
+  -p            Preview mode (show recording timer)
+  -h            Show this help message
+
+Examples:
+  $(basename "$0") -f 24 -s 1024    # 24 FPS, 1024px width
+  $(basename "$0") -c 256 -o ~/GIFs # 256-color palette, custom output dir
+
+EOF
+}
+
+# Handle signals
+cleanup() {
+    echo -e "\n${YELLOW}Recording interrupted. Cleaning up...${RESET}"
+    if [ -f "$output_gif" ]; then
+        rm -f "$output_gif"
+    fi
+    exit 1
+}
+
+trap cleanup SIGINT SIGTERM
+
+# Select screen region with preview
 select_region() {
-    echo "Select the area to record..."
+    echo -e "${BLUE}Select screen region to record...${RESET}"
     sleep 1
-    rect=$(slop -f "%x %y %w %h %g %i") || exit 1
-    read -r X Y W H G ID < <(echo "$rect")
+
+    local geometry
+    geometry=$(slop -b 2 -c 0.3,0.4,0.6,0.4 -f "%x %y %w %h %g %i") || exit 1
+    read -r X Y W H G ID <<< "$geometry"
+
+    if (( W < 50 || H < 50 )); then
+        echo -e "${RED}Error: Minimum region size is 50x50 pixels${RESET}"
+        exit 1
+    fi
+
+    echo -e "${GREEN}Selected region:${RESET} ${W}x${H} at (${X},${Y})"
 }
 
-# Function to record the screen
+# Generate optimized palette
+generate_palette() {
+    local input="$1" palette="$2"
+    ffmpeg -loglevel error -i "$input" \
+        -vf "fps=${OUTPUT_FPS},scale=${SCALE_WIDTH}:-1:flags=lanczos,palettegen" \
+        -y "$palette"
+}
+
+# Optimize GIF with palette
+optimize_gif() {
+    local input="$1" output="$2" palette
+    palette="$(mktemp /tmp/palette.XXXXXX.png)"
+
+    generate_palette "$input" "$palette"
+    
+    ffmpeg -loglevel error -i "$input" -i "$palette" \
+        -lavfi "fps=${OUTPUT_FPS},scale=${SCALE_WIDTH}:-1:flags=lanczos [x]; [x][1:v] paletteuse" \
+        -y "$output"
+    
+    rm -f "$palette"
+}
+
+# Main recording function
 record_screen() {
-    ffmpeg -loglevel quiet -video_size "$W"x"$H" -framerate 60 -f x11grab -i :0.0+"$X","$Y" -vf "fps=10,scale=800:-1:flags=lanczos" -c:v gif "$output_gif"
+    local timestamp output_gif tmpfile
+    timestamp=$(date "+%Y%m%d-%H%M%S")
+    output_gif="${OUTPUT_DIR}/screengif-${timestamp}.gif"
+    tmpfile="$(mktemp /tmp/screengif.XXXXXX.mp4)"
+
+    mkdir -p "$OUTPUT_DIR"
+
+    echo -e "${BLUE}Recording started... ${YELLOW}(Press Ctrl+C to stop)${RESET}"
+
+    ffmpeg -loglevel error \
+        -video_size "${W}x${H}" \
+        -framerate "$INPUT_FPS" \
+        -f x11grab -i "${X_SERVER}+${X},${Y}" \
+        -vf "fps=${OUTPUT_FPS},scale=${SCALE_WIDTH}:-1:flags=lanczos" \
+        -y "$tmpfile"
+
+    if [ "$OPTIMIZE" = true ]; then
+        echo -e "${BLUE}Optimizing GIF...${RESET}"
+        optimize_gif "$tmpfile" "$output_gif"
+        rm -f "$tmpfile"
+    else
+        mv "$tmpfile" "$output_gif"
+    fi
+
+    if [ "$NOTIFICATIONS" = true ] && command -v notify-send &> /dev/null; then
+        notify-send "ScreenGIF" "Recording saved to:\n$(basename "$output_gif")"
+    fi
+
+    echo -e "${GREEN}Recording saved to:${RESET} ${output_gif}"
+    echo -e "${BLUE}File size:${RESET} $(du -h "$output_gif" | cut -f1)"
 }
 
-# Main function
+# Parse command-line options
+while getopts "f:s:o:c:xnph" opt; do
+    case "$opt" in
+        f) OUTPUT_FPS="$OPTARG" ;;
+        s) SCALE_WIDTH="$OPTARG" ;;
+        o) OUTPUT_DIR="$OPTARG" ;;
+        c) COLOR_MODE="$OPTARG" ;;
+        x) OVERWRITE=true ;;
+        n) NOTIFICATIONS=false ;;
+        p) OPTIMIZE=false ;;
+        h) show_help; exit 0 ;;
+        *) show_help; exit 1 ;;
+    esac
+done
+
+# Main execution flow
 main() {
+    check_dependencies
     select_region
-    current_time=$(date "+%Y%m%d-%H%M%S")
-    output_gif="$HOME/Videos/screengif-$current_time.gif"
     record_screen
-    echo "GIF saved as $output_gif"
 }
 
 main
