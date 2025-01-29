@@ -1,96 +1,129 @@
 #!/bin/bash
+set -eo pipefail
 
-# Function to display help
+# Constants and configuration
+SUPPORTED_ALGORITHMS=("tar" "gzip" "bzip2" "zip" "lz4" "zstd")
+VERSION="1.1.0"
+OPENSSL_CMD="openssl enc -aes-256-cbc -salt -pbkdf2"
+
+# Display help information
 show_help() {
-    echo "Usage: $0 [-e] [-a algorithm] [-p password] -o output_file input_files"
-    echo "  -e                 Enable encryption"
-    echo "  -a algorithm       Compression algorithm: tar, gzip, bzip2, zip, lz4, zstd (default: tar)"
-    echo "  -p password        Password for encryption (required if -e is specified)"
-    echo "  -o output_file     Output compressed file"
-    echo "  input_files        Files or directories to compress"
+    cat <<EOF
+File Compression Tool v${VERSION}
+Usage: ${0##*/} [-e] [-a ALGORITHM] [-p PASSWORD] -o OUTPUT INPUT...
+
+Options:
+  -e, --encrypt      Enable file encryption
+  -a, --algorithm    Compression algorithm (default: tar)
+                     Supported: ${SUPPORTED_ALGORITHMS[@]}
+  -p, --password     Encryption password (required for -e)
+  -o, --output       Output file base name (extensions auto-added)
+  -h, --help         Show this help message
+  -v, --version      Display version information
+
+Examples:
+  # Create encrypted zip archive
+  ${0##*/} -e -a zip -p "secret" -o backup ~/Documents
+
+  # Compress using zstd without encryption
+  ${0##*/} -a zstd -o project-archive ~/projects/src
+EOF
 }
 
-# Default values
-ENCRYPTION=false
-ALGORITHM="tar"
-PASSWORD=""
-OUTPUT_FILE=""
-INPUT_FILES=()
+# Display version information
+show_version() {
+    echo "File Compression Tool v${VERSION}"
+}
 
-# Parse options
-while getopts "ea:p:o:h" opt; do
-    case ${opt} in
-        e)
-            ENCRYPTION=true
-            ;;
-        a)
-            ALGORITHM=${OPTARG}
-            ;;
-        p)
-            PASSWORD=${OPTARG}
-            ;;
-        o)
-            OUTPUT_FILE=${OPTARG}
-            ;;
-        h)
-            show_help
-            exit 0
-            ;;
-        \?)
-            show_help
-            exit 1
-            ;;
+# Error handling functions
+error() {
+    echo "Error: $1" >&2
+    exit 1
+}
+
+check_dependency() {
+    command -v "$1" >/dev/null 2>&1 || error "Required command '$1' not found"
+}
+
+# Compression handlers
+tar_based_compression() {
+    local compression="$1"
+    local extension="$2"
+    local tar_opts=()
+
+    case "$compression" in
+        gzip)   check_dependency gzip; tar_opts=(-z) ;;
+        bzip2)  check_dependency bzip2; tar_opts=(-j) ;;
+        lz4)    check_dependency lz4; tar_opts=("--use-compress-program=lz4") ;;
+        zstd)   check_dependency zstd; tar_opts=("--use-compress-program=zstd") ;;
+        *)      tar_opts=() ;;
     esac
-done
-shift $((OPTIND -1))
 
-# Get input files
-INPUT_FILES=("$@")
+    tar "${tar_opts[@]}" -cvf "${OUTPUT_PATH}${extension}" -- "${INPUT_FILES[@]}"
+}
 
-# Check required parameters
-if [[ -z "${OUTPUT_FILE}" ]] || [[ ${#INPUT_FILES[@]} -eq 0 ]]; then
-    show_help
-    exit 1
-fi
+zip_compression() {
+    check_dependency zip
+    zip -qr "${OUTPUT_PATH}.zip" -- "${INPUT_FILES[@]}"
+}
 
-# Check encryption parameters
-if [[ "${ENCRYPTION}" == true ]] && [[ -z "${PASSWORD}" ]]; then
-    echo "Encryption password is required when -e is specified"
-    exit 1
-fi
+# Main workflow
+main() {
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -e|--encrypt)   ENCRYPT=true; shift ;;
+            -a|--algorithm) ALGORITHM="$2"; shift 2 ;;
+            -p|--password)  PASSWORD="$2"; shift 2 ;;
+            -o|--output)    OUTPUT_BASE="$2"; shift 2 ;;
+            -h|--help)      show_help; exit 0 ;;
+            -v|--version)   show_version; exit 0 ;;
+            --)             shift; break ;;
+            -*)             error "Invalid option: $1" ;;
+            *)              INPUT_FILES+=("$1"); shift ;;
+        esac
+    done
 
-# Compression and encryption
-case "${ALGORITHM}" in
-    tar)
-        tar -cvf "${OUTPUT_FILE}.tar" "${INPUT_FILES[@]}"
-        [[ "${ENCRYPTION}" == true ]] && openssl enc -aes-256-cbc -salt -in "${OUTPUT_FILE}.tar" -out "${OUTPUT_FILE}.tar.enc" -pass pass:"${PASSWORD}" && rm "${OUTPUT_FILE}.tar"
-        ;;
-    gzip)
-        tar -cvf - "${INPUT_FILES[@]}" | gzip > "${OUTPUT_FILE}.tar.gz"
-        [[ "${ENCRYPTION}" == true ]] && openssl enc -aes-256-cbc -salt -in "${OUTPUT_FILE}.tar.gz" -out "${OUTPUT_FILE}.tar.gz.enc" -pass pass:"${PASSWORD}" && rm "${OUTPUT_FILE}.tar.gz"
-        ;;
-    bzip2)
-        tar -cvf - "${INPUT_FILES[@]}" | bzip2 > "${OUTPUT_FILE}.tar.bz2"
-        [[ "${ENCRYPTION}" == true ]] && openssl enc -aes-256-cbc -salt -in "${OUTPUT_FILE}.tar.bz2" -out "${OUTPUT_FILE}.tar.bz2.enc" -pass pass:"${PASSWORD}" && rm "${OUTPUT_FILE}.tar.bz2"
-        ;;
-    zip)
-        zip -r "${OUTPUT_FILE}.zip" "${INPUT_FILES[@]}"
-        [[ "${ENCRYPTION}" == true ]] && openssl enc -aes-256-cbc -salt -in "${OUTPUT_FILE}.zip" -out "${OUTPUT_FILE}.zip.enc" -pass pass:"${PASSWORD}" && rm "${OUTPUT_FILE}.zip"
-        ;;
-    lz4)
-        tar -cvf - "${INPUT_FILES[@]}" | lz4 > "${OUTPUT_FILE}.tar.lz4"
-        [[ "${ENCRYPTION}" == true ]] && openssl enc -aes-256-cbc -salt -in "${OUTPUT_FILE}.tar.lz4" -out "${OUTPUT_FILE}.tar.lz4.enc" -pass pass:"${PASSWORD}" && rm "${OUTPUT_FILE}.tar.lz4"
-        ;;
-    zstd)
-        tar -cvf - "${INPUT_FILES[@]}" | zstd > "${OUTPUT_FILE}.tar.zst"
-        [[ "${ENCRYPTION}" == true ]] && openssl enc -aes-256-cbc -salt -in "${OUTPUT_FILE}.tar.zst" -out "${OUTPUT_FILE}.tar.zst.enc" -pass pass:"${PASSWORD}" && rm "${OUTPUT_FILE}.tar.zst"
-        ;;
-    *)
-        echo "Unsupported compression algorithm: ${ALGORITHM}"
-        exit 1
-        ;;
-esac
+    # Validate inputs
+    [[ "${#INPUT_FILES[@]}" -eq 0 ]] && error "No input files specified"
+    [[ -z "$OUTPUT_BASE" ]] && error "Output file name required"
+    [[ ! " ${SUPPORTED_ALGORITHMS[@]} " =~ " $ALGORITHM " ]] && 
+        error "Unsupported algorithm: $ALGORITHM. Valid options: ${SUPPORTED_ALGORITHMS[*]}"
 
-echo "Compression completed successfully."
-[[ "${ENCRYPTION}" == true ]] && echo "File encrypted successfully."
-  
+    # Configure paths
+    local output_extension
+    case "$ALGORITHM" in
+        tar)   output_extension=".tar" ;;
+        gzip)  output_extension=".tar.gz" ;;
+        bzip2) output_extension=".tar.bz2" ;;
+        zip)   output_extension=".zip" ;;
+        lz4)   output_extension=".tar.lz4" ;;
+        zstd)  output_extension=".tar.zst" ;;
+    esac
+    OUTPUT_PATH="${OUTPUT_BASE}${output_extension}"
+
+    # Perform compression
+    case "$ALGORITHM" in
+        tar|gzip|bzip2|lz4|zstd) tar_based_compression "$ALGORITHM" "$output_extension" ;;
+        zip) zip_compression ;;
+    esac || error "Compression failed"
+
+    # Handle encryption
+    if [[ "$ENCRYPT" == true ]]; then
+        [[ -z "$PASSWORD" ]] && error "Password required for encryption"
+        
+        local encrypted_path="${OUTPUT_PATH}.enc"
+        echo "Encrypting archive..."
+        $OPENSSL_CMD -in "$OUTPUT_PATH" -out "$encrypted_path" -pass "pass:$PASSWORD" ||
+            error "Encryption failed"
+        
+        rm -f "$OUTPUT_PATH"
+        OUTPUT_PATH="$encrypted_path"
+    fi
+
+    echo "Operation completed successfully"
+    echo "Output file: ${OUTPUT_PATH}"
+}
+
+# Execute main function
+main "$@"
