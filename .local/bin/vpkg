@@ -1,76 +1,132 @@
 #!/bin/bash
+set -eo pipefail
+shopt -s nullglob
 
-# Define the directory where the void-packages repo will be cloned
-VP_DIR="$HOME/.vpkg"
+# Configuration
+readonly VP_DIR="${HOME}/.vpkg"
+readonly VPKG_CMD="/usr/local/bin/vpkg"
+readonly CONF_FILE="${VP_DIR}/etc/conf"
+readonly REPO_URL="https://github.com/void-linux/void-packages"
 
-# Check if the directory already exists
-if [ ! -d "$VP_DIR" ]; then
-  echo "Cloning the void-packages repository into $VP_DIR..."
-  git clone --depth=1 https://github.com/void-linux/void-packages "$VP_DIR"
-else
-  echo "The directory $VP_DIR already exists. Skipping clone."
-fi
+# Text formatting
+readonly BOLD=$(tput bold)
+readonly GREEN=$(tput setaf 2)
+readonly RED=$(tput setaf 1)
+readonly RESET=$(tput sgr0)
 
-# Navigate to the void-packages directory
-cd "$VP_DIR"
+# Error handling
+trap 'error_handler $? $LINENO' ERR
+trap 'interrupt_handler' SIGINT
 
-# Run the binary bootstrap
-echo "Running binary-bootstrap..."
-./xbps-src binary-bootstrap
+error_handler() {
+  local exit_code=$1
+  local line_no=$2
+  echo -e "\n${RED}${BOLD}Error${RESET} at line ${line_no} - exit code ${exit_code}" >&2
+  exit "${exit_code}"
+}
 
-# Configure XBPS to allow restricted packages
-echo "Configuring XBPS to allow restricted packages..."
-echo "XBPS_ALLOW_RESTRICTED=yes" >> etc/conf
+interrupt_handler() {
+  echo -e "\n${RED}${BOLD}Operation cancelled by user!${RESET}" >&2
+  exit 1
+}
 
-# Create the vpkg command
-VP_COMMAND="/usr/local/bin/vpkg"
+# Dependency checks
+check_dependencies() {
+  local deps=("git" "sudo")
+  for dep in "${deps[@]}"; do
+    if ! command -v "${dep}" >/dev/null 2>&1; then
+      echo "${RED}Error: Missing required dependency '${dep}'${RESET}" >&2
+      exit 1
+    fi
+  done
+}
 
-# Write the vpkg command
-cat << 'EOF' | sudo tee $VP_COMMAND > /dev/null
+# Repository management
+setup_repository() {
+  if [[ -d "${VP_DIR}/.git" ]]; then
+    echo "${BOLD}Using existing repository in ${VP_DIR}${RESET}"
+    return 0
+  fi
+
+  if [[ -e "${VP_DIR}" ]]; then
+    echo "${RED}Error: ${VP_DIR} exists but is not a git repository${RESET}" >&2
+    exit 1
+  fi
+
+  echo "${BOLD}Cloning void-packages repository...${RESET}"
+  git clone --depth=1 "${REPO_URL}" "${VP_DIR}"
+}
+
+# Build environment setup
+bootstrap_environment() {
+  (
+    cd "${VP_DIR}"
+    if [[ ! -f ./xbps-src ]]; then
+      echo "${RED}Error: xbps-src not found in repository${RESET}" >&2
+      exit 1
+    fi
+    
+    echo "${BOLD}Bootstrapping build environment...${RESET}"
+    ./xbps-src binary-bootstrap
+  )
+}
+
+# Configuration management
+enable_restricted_packages() {
+  mkdir -p "${VP_DIR}/etc"
+  if ! grep -qx 'XBPS_ALLOW_RESTRICTED=yes' "${CONF_FILE}" 2>/dev/null; then
+    echo "${BOLD}Enabling restricted packages...${RESET}"
+    echo 'XBPS_ALLOW_RESTRICTED=yes' >> "${CONF_FILE}"
+  fi
+}
+
+# vpkg command installation
+install_vpkg_command() {
+  echo "${BOLD}Installing vpkg command...${RESET}"
+  sudo tee "${VPKG_CMD}" >/dev/null <<'EOF'
 #!/bin/bash
+set -eo pipefail
 
-# Define the directory where the void-packages repo is cloned
-VP_DIR="$HOME/.vpkg"
+readonly VP_DIR="${HOME}/.vpkg"
+readonly PKG_DIR="${VP_DIR}/hostdir/binpkgs"
+readonly GREEN=$(tput setaf 2)
+readonly RESET=$(tput sgr0)
 
-# Navigate to the void-packages directory
-cd "$VP_DIR"
+main() {
+  [[ $# -eq 0 ]] && usage
+  cd "${VP_DIR}" || exit 1
+  
+  local package="$1"
+  echo "${GREEN}Building package: ${package}${RESET}"
+  ./xbps-src pkg "${package}"
+  
+  echo "${GREEN}Installing package: ${package}${RESET}"
+  sudo xbps-install --repository="${PKG_DIR}" "${package}"
+  
+  echo "${GREEN}Successfully installed ${package}${RESET}"
+}
 
-# Check for the first argument
-if [ -z "$1" ]; then
-  echo "Usage: vpkg <package_name>"
+usage() {
+  echo "Usage: ${0##*/} <package_name>"
   exit 1
-fi
+}
 
-PACKAGE_NAME="$1"
-
-# Run the xbps-src command to build the package
-./xbps-src pkg "$PACKAGE_NAME"
-
-# Check if the package was built successfully
-if [ $? -ne 0 ]; then
-  echo "Failed to build package: $PACKAGE_NAME"
-  exit 1
-fi
-
-# Determine the package directory (e.g. hostdir/binpkgs or hostdir/binpkgs/nonfree)
-PACKAGE_DIR="$(find hostdir/binpkgs -type d -name "$PACKAGE_NAME" -print -quit)"
-if [ -z "$PACKAGE_DIR" ]; then
-  PACKAGE_DIR="hostdir/binpkgs"
-fi
-
-# Install the built package
-sudo xbps-install --repository "$PACKAGE_DIR" "$PACKAGE_NAME"
-
-if [ $? -eq 0 ]; then
-  echo "Package $PACKAGE_NAME installed successfully."
-else
-  echo "Failed to install package: $PACKAGE_NAME"
-  exit 1
-fi
+main "$@"
 EOF
 
-# Make the vpkg command executable
-sudo chmod +x $VP_COMMAND
+  sudo chmod 755 "${VPKG_CMD}"
+}
 
-echo "The vpkg command has been created and is available at $VP_COMMAND."
-echo "You can now use 'vpkg <package_name>' to build and install packages."
+# Main execution flow
+main() {
+  check_dependencies
+  setup_repository
+  bootstrap_environment
+  enable_restricted_packages
+  install_vpkg_command
+  
+  echo -e "\n${GREEN}${BOLD}Setup complete!${RESET}"
+  echo "Use 'vpkg <package_name>' to build and install packages"
+}
+
+main "$@"
