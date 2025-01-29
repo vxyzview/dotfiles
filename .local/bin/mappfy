@@ -1,86 +1,147 @@
-#!/bin/bash
-# shellcheck disable=SC2199
-# shellcheck disable=SC2086
-# shellcheck source=/dev/null
-#
-# Copyright (C) 2024-02 pyranix <pyranix@proton.me>
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+#!/usr/bin/env bash
+# shellcheck disable=SC2155
+set -euo pipefail
 
-# Define the directory containing .desktop files
-desktop_dir="/usr/share/applications"
+# Configuration
+readonly DESKTOP_DIR="/usr/share/applications"
+readonly BACKUP_EXT=".bak"
+readonly SELF_NAME="mappfy"
+readonly REQUIRED_COMMANDS=("rofi" "dunstify" "sed")
 
-# Use rofi to show the manual
-rofi -show information -e "This script allows you to add an additional command to the 'Exec' line in selected '.desktop' files within the specified directory.
+# Display variables
+readonly ROFI_THEME="${ROFI_THEME:-}"
+readonly ROFI_OPTIONS=(
+    -theme-str "window { width: 65%; }" 
+    ${ROFI_THEME:+(-theme "$ROFI_THEME")}
+)
 
-Options:
-1. dbus-launch
-2. dbus-run-session
-3. Write your custom command
+# State management
+declare -A modified_files=()
 
-Usage:
-mappfy"
+# Error handling
+die() { dunstify -u critical "Error: $*"; exit 1; }
+trap 'cleanup' EXIT
 
-# Get a list of all .desktop files in the specified directory
-desktop_files=("$desktop_dir"/*.desktop)
-
-# Check if there are any .desktop files
-if [ ${#desktop_files[@]} -eq 0 ]; then
-    echo "No .desktop files found in $desktop_dir. Exiting."
-    exit 1
-fi
-
-# Use rofi to get user input for the additional command
-selected_option=$(echo -e "dbus-launch\ndbus-run-session\nWrite your custom command" | rofi -dmenu -p "Select an additional cmd or write manual the cmd:")
-
-# Define the additional command based on the user's selection
-case "$selected_option" in
-    "dbus-launch")
-        additional_command="dbus-launch"
-        ;;
-    "dbus-run-session")
-        additional_command="dbus-run-session"
-        ;;
-    "Write your custom command")
-        read -p "Enter your custom command: " additional_command
-        ;;
-    *)
-        echo "Invalid option. Exiting."
-        exit 1
-        ;;
-esac
-
-# Use rofi to get user input for selecting applications
-selected_apps=$(printf "%s\n" "${desktop_files[@]##*/}" | rofi -dmenu -p "Select applications to modify:" -multi-select)
-
-# Check if the user selected any applications
-if [ -n "$selected_apps" ]; then
-    # Loop through selected applications and modify their Exec line
-    for selected_app in $selected_apps; do
-        desktop_file="$desktop_dir/$selected_app"
-        # Check if the file exists
-        if [ -e "$desktop_file" ]; then
-            # Check if Exec line exists, if not add it, otherwise insert the new command at the beginning
-            if grep -q "^Exec=" "$desktop_file"; then
-                sed -i "s|^Exec=|Exec=$additional_command |" "$desktop_file"
-            else
-                echo "Exec=$additional_command" >> "$desktop_file"
-            fi
-            dunstify "Additional command added to $desktop_file"
-        fi
+validate_dependencies() {
+    for cmd in "${REQUIRED_COMMANDS[@]}"; do
+        command -v "$cmd" &>/dev/null || die "Missing required command: $cmd"
     done
+}
 
-    dunstify "Additional command added successfully."
-else
-    dunstify "No applications selected. Exiting."
-fi
+check_permissions() {
+    [[ -w "$DESKTOP_DIR" ]] || die "Insufficient permissions. Try running with sudo."
+}
+
+cleanup() {
+    if [[ ${#modified_files[@]} -gt 0 ]]; then
+        for file in "${!modified_files[@]}"; do
+            [[ -f "${file}${BACKUP_EXT}" ]] && sudo mv -f "${file}${BACKUP_EXT}" "$file"
+        done
+    fi
+}
+
+show_instructions() {
+    rofi -show information -e "\t<b>${SELF_NAME^^}</b>
+
+This script allows modifying .desktop file Exec entries.
+
+<u>Features</u>:
+• Command prefix management
+• Backup/restore functionality
+• Dry-run mode
+• Duplicate prevention
+• Desktop database updates" "${ROFI_OPTIONS[@]}"
+}
+
+get_operation_mode() {
+    local modes=("Add Command Prefix" "Restore Backups" "Dry Run")
+    printf "%s\n" "${modes[@]}" | rofi -dmenu -p "Select operation:" "${ROFI_OPTIONS[@]}"
+}
+
+get_additional_command() {
+    local command_list=("dbus-launch" "dbus-run-session" "custom...")
+    local selected=$(printf "%s\n" "${command_list[@]}" | rofi -dmenu -p "Select prefix:" "${ROFI_OPTIONS[@]}")
+
+    case "$selected" in
+        "custom...")
+            selected=$(rofi -dmenu -p "Enter custom command:" "${ROFI_OPTIONS[@]}" || true)
+            [[ -n "$selected" ]] || die "No custom command provided"
+            ;;
+        "") die "No command selected" ;;
+    esac
+    echo "$selected"
+}
+
+select_applications() {
+    local desktop_files=("$DESKTOP_DIR"/*.desktop)
+    (( ${#desktop_files[@]} )) || die "No .desktop files found in $DESKTOP_DIR"
+
+    printf "%s\n" "${desktop_files[@]##*/}" | rofi -dmenu -p "Select apps:" -multi-select "${ROFI_OPTIONS[@]}"
+}
+
+validate_command() {
+    local cmd="$1"
+    [[ "$cmd" =~ ^[a-zA-Z0-9_\.\-]+$ ]] || die "Invalid command format: $cmd"
+}
+
+modify_desktop_file() {
+    local file="$1" cmd="$2" mode="$3"
+    local backup_file="${file}${BACKUP_EXT}"
+    
+    case "$mode" in
+        "Dry Run")
+            echo "Would modify: $file (Exec → $cmd)"
+            return
+            ;;
+        "Add Command Prefix")
+            [[ -f "$backup_file" ]] || sudo cp -p "$file" "$backup_file"
+            sudo sed -i.bak -E "s/^Exec=(${cmd} )?/Exec=${cmd} /" "$file" || die "Failed to modify $file"
+            modified_files["$file"]=1
+            ;;
+        "Restore Backups")
+            [[ -f "$backup_file" ]] && sudo mv -f "$backup_file" "$file"
+            ;;
+    esac
+}
+
+update_desktop_db() {
+    command -v update-desktop-database &>/dev/null && {
+        sudo update-desktop-database "$DESKTOP_DIR"
+        dunstify -u low "Desktop database updated"
+    }
+}
+
+main() {
+    validate_dependencies
+    check_permissions
+    show_instructions
+
+    local mode=$(get_operation_mode)
+    [[ -z "$mode" ]] && die "No operation selected"
+
+    case "$mode" in
+        "Add Command Prefix"|"Dry Run")
+            local additional_command=$(get_additional_command)
+            validate_command "$additional_command"
+            local selected_apps=$(select_applications)
+            [[ -n "$selected_apps" ]] || die "No applications selected"
+
+            while IFS= read -r app; do
+                modify_desktop_file "$DESKTOP_DIR/$app" "$additional_command" "$mode"
+            done <<< "$selected_apps"
+            ;;
+
+        "Restore Backups")
+            local backups=($(sudo find "$DESKTOP_DIR" -name "*${BACKUP_EXT}"))
+            (( ${#backups[@]} )) || die "No backups found"
+
+            printf "%s\n" "${backups[@]##*/}" | rofi -dmenu -p "Select backups to restore:" -multi-select \
+                | xargs -I{} sudo mv -f "$DESKTOP_DIR/{}" "$DESKTOP_DIR/${BACKUP_EXT}"
+            ;;
+    esac
+
+    [[ "$mode" != "Dry Run" ]] && update_desktop_db
+    dunstify -u normal "Operation completed: $mode"
+}
+
+main "$@"
