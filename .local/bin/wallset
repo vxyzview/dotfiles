@@ -1,46 +1,109 @@
-#!/bin/bash
-# shellcheck disable=SC2199
-# shellcheck disable=SC2086
-# shellcheck source=/dev/null
+#!/usr/bin/env bash
+# shellcheck disable=SC2016,SC2086
 #
-# Copyright (C) 2024-02 pyranix <pyranix@proton.me>
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# Directory for wallpapers
-WALLPAPER_DIR="$HOME/.wallpaper"
+# Lightweight Wallpaper Manager with Preview and Multi-Monitor Support
 
-# Check if Rofi and Feh are installed
-if ! command -v rofi &> /dev/null || ! command -v feh &> /dev/null; then
-    echo "Error: Rofi or feh not found. Please install the required tools."
-    exit 1
-fi
+WALLPAPER_DIR="${HOME}/.wallpaper"
+CACHE_DIR="${HOME}/.cache/wallpaper-manager"
+ROFI_THEME=(
+    -theme-str 'entry { placeholder: "Search Wallpapers..."; }'
+    -theme-str 'listview { lines: 7; }'
+)
+ROFI_CMD=(-no-custom -location 2 -dmenu -i -kb-custom-1 "Ctrl+p" ${ROFI_THEME[@]})
+PREVIEW_CMD="feh --draw-filename --scale-down --preview \"\$FILE\""
+VALID_EXTENSIONS=("jpg" "jpeg" "png" "webp" "bmp")
 
-# Check if the wallpaper directory exists
-if [ ! -d "$WALLPAPER_DIR" ]; then
-    echo "Error: Wallpaper directory not found: $WALLPAPER_DIR"
-    exit 1
-fi
+# Initialize required directories
+init_directories() {
+    mkdir -p "${WALLPAPER_DIR}" "${CACHE_DIR}"
+}
 
-# Use rofi to select a wallpaper
-selected_wallpaper=$(ls "$WALLPAPER_DIR" | rofi -dmenu -p "Select Wallpaper:")
+# Check system requirements
+check_requirements() {
+    local missing=()
+    command -v rofi >/dev/null || missing+=("rofi")
+    command -v feh >/dev/null || missing+=("feh")
+    command -v dunstify >/dev/null || missing+=("dunstify")
+    command -v convert >/dev/null || missing+=("imagemagick")
 
-# Check if the wallpaper selection is not empty
-if [ -n "$selected_wallpaper" ]; then
-    # Set the selected wallpaper
-    feh --bg-fill "$WALLPAPER_DIR/$selected_wallpaper"
-    dunstify -i "$HOME/.notify/images/wallpaper.png" "Wallpaper '$selected_wallpaper' set successfully!"
-else
-    dunstify -i "$HOME/.notify/images/wallpaper.png" "No wallpaper selected. Using the default wallpaper."
-fi
+    [[ ${#missing[@]} -gt 0 ]] && {
+        dunstify -u critical "Missing requirements:" "${missing[*]}"
+        exit 1
+    }
+}
 
-exit 0
+# Generate thumbnail previews
+generate_thumbnails() {
+    local wall_path="$1"
+    local thumb_name="${CACHE_DIR}/$(basename "${wall_path}").thumb.jpg"
+    
+    [[ -f "${thumb_name}" ]] || convert "${wall_path}" -thumbnail 400x400^ \
+        -gravity center -extent 400x400 "${thumb_name}" 2>/dev/null
+    echo "${thumb_name}"
+}
+
+# Wallpaper selection menu
+show_wallpaper_menu() {
+    declare -A wall_map
+    while IFS= read -r -d $'\0' wall; do
+        local fname=$(basename "${wall}")
+        wall_map["${fname}"]="${wall}"
+    done < <(find "${WALLPAPER_DIR}" -maxdepth 1 -type f \( -iname "*.jpg" -o -iname "*.jpeg" \
+        -o -iname "*.png" -o -iname "*.webp" -o -iname "*.bmp" \) -print0)
+
+    local selection
+    selection=$(printf '%s\n' "${!wall_map[@]}" | rofi ${ROFI_CMD[@]})
+    
+    case $? in
+        0) echo "${wall_map["${selection}"]}" ;;
+        10) show_preview "${wall_map["${selection}"]}" ;;
+        *) echo "" ;;
+    esac
+}
+
+# Preview window
+show_preview() {
+    local wall_path="$1"
+    local thumb=$(generate_thumbnails "${wall_path}")
+    
+    feh --title "Wallpaper Preview" --scale-down --geometry 800x600 \
+        --info "echo 'Resolution: %wx%h\nSize: %b'" "${thumb}" \
+        | rofi -dmenu -p "Previewing: $(basename "${wall_path}")" -theme-str '* { background: transparent; }'
+}
+
+# Set wallpaper and create gradient overlay
+set_wallpaper() {
+    local wall_path="$1"
+    feh --no-fehbg --bg-fill "${wall_path}"
+    
+    # Create gradient overlay using imagemagick
+    convert "${wall_path}" \( +clone -alpha extract -draw 'fill black polygon 0,0 0,60 60,0' \
+        -alpha off -write mpr:clip +delete \) -mask mpr:clip -background "#2e3440" \
+        -alpha on -opaque none +mask "${CACHE_DIR}/gradient.png"
+    
+    dunstify -t 2500 -i "${CACHE_DIR}/gradient.png" "󰆊 Wallpaper Set" \
+        "Selected: $(basename "${wall_path}")"
+}
+
+# Main workflow
+main() {
+    init_directories
+    check_requirements
+    
+    local selected_wall
+    selected_wall=$(show_wallpaper_menu)
+    
+    [[ -z "${selected_wall}" ]] && {
+        dunstify -t 1500 "󰩃 No wallpaper selected"
+        exit 0
+    }
+    
+    [[ -f "${selected_wall}" ]] || {
+        dunstify -u critical "󰅖 Error" "Wallpaper file not found!"
+        exit 1
+    }
+
+    set_wallpaper "${selected_wall}"
+}
+
+main "$@"
