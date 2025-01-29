@@ -1,88 +1,131 @@
 #!/bin/bash
 
-# Define language code and name mappings
-declare -A language_codes=(
-    ["af"]="Afrikaans" ["sq"]="Albanian" ["am"]="Amharic" ["ar"]="Arabic" ["hy"]="Armenian"
-    ["az"]="Azerbaijani" ["eu"]="Basque" ["be"]="Belarusian" ["bn"]="Bengali" ["bs"]="Bosnian"
-    ["bg"]="Bulgarian" ["ca"]="Catalan" ["ceb"]="Cebuano" ["ny"]="Chichewa" ["zh-CN"]="Chinese (Simplified)"
-    ["zh-TW"]="Chinese (Traditional)" ["co"]="Corsican" ["hr"]="Croatian" ["cs"]="Czech" ["da"]="Danish"
-    ["nl"]="Dutch" ["en"]="English" ["eo"]="Esperanto" ["et"]="Estonian" ["tl"]="Filipino" ["fi"]="Finnish"
-    ["fr"]="French" ["fy"]="Frisian" ["gl"]="Galician" ["ka"]="Georgian" ["de"]="German" ["el"]="Greek"
-    ["gu"]="Gujarati" ["ht"]="Haitian Creole" ["ha"]="Hausa" ["haw"]="Hawaiian" ["iw"]="Hebrew" ["hi"]="Hindi"
-    ["hmn"]="Hmong" ["hu"]="Hungarian" ["is"]="Icelandic" ["ig"]="Igbo" ["id"]="Indonesian" ["ga"]="Irish"
-    ["it"]="Italian" ["ja"]="Japanese" ["jv"]="Javanese" ["kn"]="Kannada" ["kk"]="Kazakh" ["km"]="Khmer"
-    ["ko"]="Korean" ["ku"]="Kurdish (Kurmanji)" ["ky"]="Kyrgyz" ["lo"]="Lao" ["la"]="Latin" ["lv"]="Latvian"
-    ["lt"]="Lithuanian" ["lb"]="Luxembourgish" ["mk"]="Macedonian" ["mg"]="Malagasy" ["ms"]="Malay"
-    ["ml"]="Malayalam" ["mt"]="Maltese" ["mi"]="Maori" ["mr"]="Marathi" ["mn"]="Mongolian" ["my"]="Myanmar (Burmese)"
-    ["ne"]="Nepali" ["no"]="Norwegian" ["or"]="Odia (Oriya)" ["ps"]="Pashto" ["fa"]="Persian" ["pl"]="Polish"
-    ["pt"]="Portuguese" ["pa"]="Punjabi" ["ro"]="Romanian" ["ru"]="Russian" ["sm"]="Samoan" ["gd"]="Scots Gaelic"
-    ["sr"]="Serbian" ["st"]="Sesotho" ["sn"]="Shona" ["sd"]="Sindhi" ["si"]="Sinhala" ["sk"]="Slovak"
-    ["sl"]="Slovenian" ["so"]="Somali" ["es"]="Spanish" ["su"]="Sundanese" ["sw"]="Swahili" ["sv"]="Swedish"
-    ["tg"]="Tajik" ["ta"]="Tamil" ["te"]="Telugu" ["th"]="Thai" ["tr"]="Turkish" ["uk"]="Ukrainian"
-    ["ur"]="Urdu" ["ug"]="Uyghur" ["uz"]="Uzbek" ["vi"]="Vietnamese" ["cy"]="Welsh" ["xh"]="Xhosa"
-    ["yi"]="Yiddish" ["yo"]="Yoruba" ["zu"]="Zulu"
-)
+# Configuration
+CONFIG_FILE="$HOME/.translator.conf"
+HISTORY_FILE="$HOME/.translation_history"
+MAX_HISTORY=100
 
-# Function to display language selection menu
-display_language_menu() {
-    echo "Available Languages:"
-    echo "-------------------"
-    for code in "${!language_codes[@]}"; do
-        printf "[%s]\t%s\n" "$code" "${language_codes[$code]}"
+# Colors and formatting
+bold=$(tput bold)
+reset=$(tput sgr0)
+cyan=$(tput setaf 6)
+green=$(tput setaf 2)
+yellow=$(tput setaf 3)
+red=$(tput setaf 1)
+purple=$(tput setaf 5)
+
+# Dependency check
+check_dependencies() {
+    local deps=("curl" "jq" "xclip")
+    for dep in "${deps[@]}"; do
+        if ! command -v "$dep" &> /dev/null; then
+            echo -e "${red}Error: Missing required dependency - $dep${reset}"
+            exit 1
+        fi
     done
 }
 
-# Function to perform text translation
-translate_text() {
-    local from_lang="$1"
-    local to_lang="$2"
-    local text="$3"
-
-    local url="https://translate.googleapis.com/translate_a/single?client=gtx&sl=${from_lang}&tl=${to_lang}&dt=t&q=$(urlencode "$text")"
-    local translation=$(curl -sSL "$url" | sed 's/\[\[\[\"//' | cut -d '"' -f 1)
-    echo "$translation"
+# Load configuration
+load_config() {
+    [[ -f "$CONFIG_FILE" ]] || return
+    source "$CONFIG_FILE"
+    DEFAULT_SOURCE_LANG=${DEFAULT_SOURCE_LANG:-auto}
+    DEFAULT_TARGET_LANG=${DEFAULT_TARGET_LANG:-en}
 }
 
-# Function to URL encode the text for use in curl
-urlencode() {
-    echo -n "$1" | jq -s -R -r @uri
+# Save configuration
+save_config() {
+    cat > "$CONFIG_FILE" <<-EOF
+DEFAULT_SOURCE_LANG="$DEFAULT_SOURCE_LANG"
+DEFAULT_TARGET_LANG="$DEFAULT_TARGET_LANG"
+EOF
 }
 
-# Function to copy text to clipboard
-copy_to_clipboard() {
-    echo -n "$1" | xclip -selection clipboard
-    echo "Translated text has been copied to the clipboard. You can now paste it (Ctrl+V) into another application."
+# Language detection
+detect_language() {
+    local text="$1"
+    local url="https://translate.googleapis.com/translate_a/single?client=gtx&q=$(jq -rn --arg text "$text" '$text | @uri')&dt=ld"
+    curl -s "$url" | jq -r '.ld_result.srclangs[0]'
 }
 
-# Main function
+# Translation core
+translate() {
+    local sl="$1" tl="$2" text="$3"
+    local url="https://translate.googleapis.com/translate_a/single?client=gtx&sl=$sl&tl=$tl&dt=t&dt=rm&q=$(jq -rn --arg text "$text" '$text | @uri')"
+    
+    local response=$(curl -sS --fail "$url")
+    [ $? -ne 0 ] && { echo -e "${red}Translation failed${reset}"; exit 1; }
+    
+    local translation=$(jq -r '.[0][][0]' <<< "$response")
+    local pronunciation=$(jq -r '.[1][][2]' <<< "$response")
+    echo -e "$translation\n${purple}Pronunciation: $pronunciation${reset}"
+}
+
+# Interactive mode
+interactive_mode() {
+    echo -e "${cyan}${bold}Enter text to translate (Ctrl+D to finish):${reset}"
+    local text=$(cat)
+    [ -z "$text" ] && { echo -e "${red}No input text${reset}"; exit 1; }
+
+    if [[ "$DEFAULT_SOURCE_LANG" == "auto" ]]; then
+        echo -e "${yellow}Detecting language...${reset}"
+        DEFAULT_SOURCE_LANG=$(detect_language "$text")
+    fi
+
+    local output=$(translate "$DEFAULT_SOURCE_LANG" "$DEFAULT_TARGET_LANG" "$text")
+    echo -e "\n${green}${bold}Translation (${DEFAULT_SOURCE_LANG} → ${DEFAULT_TARGET_LANG}):${reset}\n$output"
+    
+    echo -n "$output" | xclip -selection clipboard && echo -e "${green}Copied to clipboard!${reset}"
+    
+    # Save to history
+    echo "[$(date +"%Y-%m-%d %H:%M:%S")] ${DEFAULT_SOURCE_LANG} → ${DEFAULT_TARGET_LANG}: $text → $output" >> "$HISTORY_FILE"
+    tail -n $MAX_HISTORY "$HISTORY_FILE" > "${HISTORY_FILE}.tmp" && mv "${HISTORY_FILE}.tmp" "$HISTORY_FILE"
+}
+
+# Command-line mode
+cli_mode() {
+    local sl="$DEFAULT_SOURCE_LANG" tl="$DEFAULT_TARGET_LANG" text
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -f|--from) sl="$2"; shift 2 ;;
+            -t|--to) tl="$2"; shift 2 ;;
+            -h|--help) show_help; exit 0 ;;
+            *) text="$1"; shift ;;
+        esac
+    done
+
+    [ -z "$text" ] && { [ -t 0 ] && interactive_mode || exit 1; }
+    [[ "$sl" == "auto" ]] && sl=$(detect_language "$text")
+    
+    local output=$(translate "$sl" "$tl" "$text")
+    echo -e "$output"
+}
+
+show_help() {
+    echo -e "${bold}Usage:${reset}"
+    echo "  translator [OPTIONS] [TEXT]"
+    echo -e "\n${bold}Options:${reset}"
+    echo "  -f, --from LANG    Source language (default: auto-detect)"
+    echo "  -t, --to LANG      Target language (default: $DEFAULT_TARGET_LANG)"
+    echo "  -h, --help         Show this help"
+    echo -e "\n${bold}Examples:${reset}"
+    echo "  translator -f en -t es \"Hello World\""
+    echo "  translator -t fr < document.txt"
+    echo "  echo \"Bonjour\" | translator -t de"
+}
+
+# Main execution
 main() {
-    # Display language selection menu
-    display_language_menu
-
-    # Prompt for source language
-    read -rp "Enter the code of the source language: " source_lang_code
-    source_lang="${language_codes[$source_lang_code]}"
-    [[ -z "$source_lang" ]] && { echo "Invalid source language code. Exiting."; exit 1; }
-
-    # Prompt for target language
-    read -rp "Enter the code of the target language: " target_lang_code
-    target_lang="${language_codes[$target_lang_code]}"
-    [[ -z "$target_lang" ]] && { echo "Invalid target language code. Exiting."; exit 1; }
-
-    # Prompt for text to translate
-    read -rp "Enter the text to translate (press Ctrl+D when done): " input_text
-
-    # Perform translation
-    translated_text=$(translate_text "$source_lang_code" "$target_lang_code" "$input_text")
-
-    # Display translated text
-    echo -e "\nTranslated Text (from $source_lang to $target_lang):"
-    echo "$translated_text"
-
-    # Copy translated text to clipboard
-    copy_to_clipboard "$translated_text"
+    check_dependencies
+    load_config
+    
+    if [ $# -eq 0 ]; then
+        interactive_mode
+    else
+        cli_mode "$@"
+    fi
+    
+    save_config
 }
 
-# Execute main function
-main
-
+main "$@"
