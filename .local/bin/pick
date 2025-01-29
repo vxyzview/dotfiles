@@ -1,13 +1,25 @@
 #!/bin/bash
 
-# Launch gpick and get the selected color
+# Enable strict error handling
+set -euo pipefail
+
+# Check if gpick is available
+if ! command -v gpick &>/dev/null; then
+    notify-send "Error" "gpick is not installed!"
+    exit 1
+fi
+
+# Get color and trim whitespace using command substitution
 color=$(gpick --pick --single --output)
 
-# Strip any trailing newline characters
-color=$(echo "$color" | tr -d '\n')
+# Check if color selection was aborted
+if [[ -z "${color}" ]]; then
+    notify-send "Color Picking Aborted" "No color was selected."
+    exit 0
+fi
 
-# Copy the color value to the clipboard using xclip
-echo -n "$color" | xclip -selection clipboard
+# Copy to clipboard using POSIX-compliant printf
+printf "%s" "${color}" | xclip -selection clipboard
 
-# Display a notification using Dunst
-notify-send "Color Picked!" "Color '$color' copied to clipboard."
+# Send notification
+notify-send "Color Picked!" "Color '${color}' copied to clipboard."
