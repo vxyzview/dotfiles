@@ -1,53 +1,74 @@
 [global]
+### Geometry & Placement ###
 width = 250
 height = 200
-notification_limit = 5
 origin = top-center
-offset = 0x20
-progress_bar = true
-progress_bar_corner_radius = 5
+offset = 32x32
 monitor = 0
 follow = mouse
-indicate_hidden = yes
-shrink = yes
-transparency = 0
+notification_limit = 5
+
+### Typography & Formatting ###
 font = JetBrainsMono Nerd Font 10
-markup = full
 format = "<b>%s</b>\n%b"
 alignment = center
+vertical_alignment = center
 word_wrap = yes
 ellipsize = middle
 ignore_newline = no
+markup = full
+
+### Visual Style ###
+corner_radius = 15
+frame_color = "#0A0D09"
+transparency = 0
+gap_size = 8
+progress_bar = true
+progress_bar_height = 4
+progress_bar_corner_radius = 5
+progress_bar_frame_width = 0
+
+### Icons & Assets ###
+icon_position = left
+max_icon_size = 32
+icon_path = [
+    /usr/share/icons/Tela-black/24/apps/scalable,
+    /usr/share/icons/Tela-black/24/devices/scalable,
+    ~/.config/dunst/images,
+]
+
+### Behavior ###
 stack_duplicates = true
 hide_duplicate_count = false
 show_indicators = yes
-icon_position = left
-max_icon_size = 32
-icon_path = /usr/share/icons/Tela-black/24/apps/scalable:/usr/share/icons/Tela-black/24/devices/scalable/
-corner_radius = 15
-title = dunst
-class = dunst
+indicate_hidden = yes
+shrink = yes
+history = yes
+history_length = 20
+always_run_script = true
+
+### Mouse Interactions ###
+mouse_left_click = do_action
+mouse_middle_click = close_all
+mouse_right_click = close_current
 
 [urgency_low]
 background = "#0A0D09"
 foreground = "#BCC5C0"
-frame_color = "#0A0D09"
 highlight = "#BDC2BE"
 timeout = 10
-icon = ~/.config/dunst/images/notification.png
+icon = notification
 
 [urgency_normal]
 background = "#0A0D09"
 foreground = "#BCC5C0"
-frame_color = "#0A0D09"
 highlight = "#BDC2BE"
 timeout = 10
-icon = ~/.config/dunst/images/notification.png
+icon = notification
 
 [urgency_critical]
 background = "#0A0D09"
 foreground = "#FFD700"
-frame_color = "#0A0D09"
 highlight = "#BDC2BE"
 timeout = 0
-icon = ~/.config/dunst/images/notification.png
+icon = warning
