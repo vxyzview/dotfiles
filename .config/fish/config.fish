@@ -1,224 +1,140 @@
-# Minimalist AS F*vk: Autostart X if running on the first virtual terminal and in an interactive session
-if status is-interactive; and test -z "$DISPLAY" -a "$XDG_VTNR" = 1; exec startx -- -keeptty; end
+# -*- mode: fish -*-
+# Minimalist Fish configuration optimized for Void Linux
 
-# Remove greeting
-set fish_greeting
+### Environment Variables ###
+set -gx EDITOR nvim
+set -gx VISUAL nvim
+set -gx TERM alacritty
+set -gx QT_QPA_PLATFORMTHEME gtk3
+set -gx XCURSOR_THEME oreo_white_cursors
+set -gx XDG_CONFIG_HOME $HOME/.config
+set -gx XDG_DATA_HOME $HOME/.local/share
+set -gx XDG_CACHE_HOME $HOME/.cache
+set -gx FZF_DEFAULT_OPTS "--height 40% --layout=reverse --border"
 
-# Starship prompt
+### Xdeb Configuration ###
+set -gx XDEB_OPT_DEPS true
+set -gx XDEB_OPT_SYNC true
+set -gx XDEB_OPT_WARN_CONFLICT true
+set -gx XDEB_OPT_FIX_CONFLICT true
+
+### Path Management ###
+fish_add_path -g --prepend \
+    $HOME/.local/bin \
+    $HOME/.config/nvim/bin \
+    $HOME/.cargo/bin
+
+### Prompt Configuration ###
 starship init fish | source
+set -U fish_greeting  # Disable welcome message
 
-# Environment variables
-set -x QT_QPA_PLATFORMTHEME "gtk3"
-set -x VISUAL "nvim" 
-set -x EDITOR "geany" 
-set -x TERM "alacritty" 
-set -x HISTCONTROL "ignoredups:erasedups"
-set -x XCURSOR_THEME "oreo_white_cursors xclock"
-
-# Set other env
-set -x XDG_CONFIG_HOME "$HOME/.config"
-set -x XDG_DATA_HOME "$HOME/.local/share"
-set -x XDG_CACHE_HOME "$HOME/.cache"
-
-# Xdeb for voidlinux
-set -x XDEB_OPT_DEPS "true"
-set -x XDEB_OPT_SYNC "true"
-set -x XDEB_OPT_WARN_CONFLICT "true"
-set -x XDEB_OPT_FIX_CONFLICT "true"
-
-# NYoom
-set -x NVIM_APPNAME "nvim"
-
-# Path my script
-set -x PATH "$HOME/.config/nvim/bin:$HOME/.local/bin:$PATH"
-
-# Set keyring
-set -x SSH_AUTH_SOCK
-
-# Change title terminal
-switch $TERM
-    case "xterm*" "rxvt*" "Eterm*" "aterm" "kterm" "gnome*" "alacritty" "st" "konsole*"; set -x PROMPT_COMMAND 'echo -ne "\033]0;($USER@$HOSTNAME:r):($PWD:r)\007"'
-    case "screen*"; set -x PROMPT_COMMAND 'echo -ne "\033_]($USER@$HOSTNAME:r):($PWD:r)\033\\"'
+### Terminal Title ###
+function fish_title
+    set -q argv[1]; or set argv fish
+    echo (prompt_pwd): $argv
 end
 
-# Navigation
-function up
-    set d ""
-    set limit $argv[1]
+### Core Utilities ###
+abbr -a c clear
+abbr -a q exit
+abbr -a v nvim
+abbr -a e $EDITOR
 
-    # Default to limit of 1
-    if [ -z "$limit" ] || [ "$limit" -le 0 ]; set limit 1; end
+### Modern Linux Commands ###
+abbr -a ls 'exa --group-directories-first -l --git --icons'
+abbr -a la 'exa --group-directories-first -la --git --icons'
+abbr -a tree 'exa --tree --level=2'
+abbr -a cat 'bat --theme=base16'
 
-    for i in (seq $limit); set d "../$d"; end
-
-    # perform cd. Show error if cd fails
-    if not cd "$d"; echo "Couldn't go up $limit dirs."; end
-end
-
-# Vim
-alias vim 'neovim'
-
-# Changing "ls" to "exa"
-alias ls 'exa -al --color=always --group-directories-first'
-alias la 'exa -a --color=always --group-directories-first'
-alias ll 'exa -l --color=always --group-directories-first'
-alias lt 'exa -aT --color=always --group-directories-first'
-alias l. 'exa -a | egrep "^\."'
-
-# Clear vkpurge alias
-function clrk
-    sudo vkpurge rm all
-end
-
-# XBPS
-alias vu 'sudo xbps-install -Syuv'
-alias vp 'sudo xbps-install -Sy'
-alias vr 'sudo xbps-remove -Rcon'
-alias vfr 'sudo xbps-remove -Rcon -F'
-alias vq 'xbps-query -l'
-alias vf 'vq | grep'
-alias vs 'xbps-query -Rs'
-alias vd 'xbps-query -x'
-
-# Flatpak
-alias fu 'flatpak update'
-alias fi 'flatpak install'
-alias ff 'flatpak repair'
-alias fs 'flatpak search'
-alias fl 'flatpak list'
-alias fr 'flatpak uninstall --delete-data'
-alias fc 'flatpak uninstall --unused'
-
-# Nix
-alias nu 'nix-env -u'
-alias nf 'nix-env --query'
-alias na 'nix-env --query "*"'
-alias ni 'nix-env -i'
-alias nr 'nix-env -e'
-alias ns 'nix search'
-alias no 'nix-env --rollback'
-alias ncl 'nix-channel --list'
-alias nca 'nix-channel --add'
-alias ncu 'nix-channel --update'
-
-# Arch & Paru
-alias pacs 'sudo pacman -Syu'
-alias paci 'sudo pacman -S --noconfirm'
-alias pacr 'sudo pacman -Rs'
-alias pacq 'pacman -Q'
-alias pacinfo 'pacman -Qi'
-alias pacfiles 'pacman -Ql'
-alias paruup 'paru -Syu'
-alias parui 'paru -S'
-alias parur 'paru -Rs'
-alias paruq 'paru -Q'
-alias paruinfo 'paru -Qi'
-alias parufiles 'paru -Ql'
-alias unlock 'sudo rm /var/lib/pacman/db.lck'
-alias cleanup 'sudo pacman -Rns (pacman -Qtdq)'
-
-# Clear cmd
-alias c 'clear'
-
-# Get fastest mirrors
-alias mirror "sudo reflector -f 30 -l 30 --number 10 --verbose --save /etc/pacman.d/mirrorlist"
-alias mirrord "sudo reflector --latest 50 --number 20 --sort delay --save /etc/pacman.d/mirrorlist"
-alias mirrors "sudo reflector --latest 50 --number 20 --sort score --save /etc/pacman.d/mirrorlist"
-alias mirrora "sudo reflector --latest 50 --number 20 --sort age --save /etc/pacman.d/mirrorlist"
-
-# Colorize grep output (good for log files)
-alias grep 'grep --color=auto'
-alias egrep 'egrep --color=auto'
-alias fgrep 'fgrep --color=auto'
-
-# Adding flags
-alias df 'df -h'
-alias free 'free -m'
-
-# Ps
-alias psa "ps auxf"
-alias psgrep "ps aux | grep -v grep | grep -i -e VSZ -e"
-alias psmem 'ps auxf | sort -nr -k 4'
-alias pscpu 'ps auxf | sort -nr -k 3'
-
-# Merge Xresources
-alias merge 'xrdb -merge ~/.Xresources'
-
-# Git
-alias addup 'git add -u'
-alias addall 'git add .'
-alias branch 'git branch'
-alias checkout 'git checkout'
-alias clone 'git clone'
-alias cdepth 'git clone --depth=1'
-alias addco 'git add . && git commit -s'
-alias fetch 'git fetch'
-alias pull 'git pull origin'
-alias push 'git push origin'
-alias stat 'git status'
-alias tag 'git tag'
-alias newtag 'git tag -a'
-alias seturl 'git remote set-url origin'
-
-# Get error messages from journalctl
-alias jctl "journalctl -p 3 -xb"
-
-# GPG encryption
-# Verify signature for isos
-alias gpg-check "gpg2 --keyserver-options auto-key-retrieve --verify"
-# Receive the key of a developer
-alias gpg-retrieve "gpg2 --keyserver-options auto-key-retrieve --receive-keys"
-
-# Play audio files in the current dir by type
-alias playwav 'mpv *.wav'
-alias playogg 'mpv *.ogg'
-alias playmp3 'mpv *.mp3'
-
-# Play video files in the current dir by type
-alias playavi 'mpv *.avi'
-alias playmov 'mpv *.mov'
-alias playmp4 'mpv *.mp4'
-
-# Switch between shells
-alias tobash "sudo chsh $USER -s /bin/bash"
-alias tozsh "sudo chsh $USER -s /bin/zsh"
-alias tofish "sudo chsh $USER -s /bin/fish"
-
-# Termbin
-alias tb "nc termbin.com 9999"
-
-# The terminal rickroll
-alias rr 'curl -s -L https://raw.githubusercontent.com/keroserene/rickrollrc/master/roll.sh | bash'
-
-# Countdown
-function cdown
-    set N $argv[1]
-    while test $N -gt 0
-        echo "$N" | figlet -c | lolcat; and sleep 1
-        set N (math $N - 1)
+### Package Management ###
+function xbps
+    switch $argv[1]
+        case update vu; sudo xbps-install -Syuv
+        case install vp; sudo xbps-install -Sy $argv[2..]
+        case remove vr; sudo xbps-remove -Rcon $argv[2..]
+        case purge vfr; sudo xbps-remove -Rcon -F $argv[2..]
+        case search vs; xbps-query -Rs $argv[2..]
+        case files; xbps-query -f $argv[2]
+        case '*'; xbps-query $argv
     end
 end
 
-# Ssh
-eval (ssh-agent -c) > /dev/null 2>&1 &
+function flat
+    switch $argv[1]
+        case update fu; flatpak update
+        case install fi; flatpak install $argv[2..]
+        case remove fr; flatpak uninstall --delete-data $argv[2..]
+        case search fs; flatpak search $argv[2..]
+        case list fl; flatpak list
+        case '*'; flatpak $argv
+    end
+end
 
-# Simple power
-alias soff 'systemctl poweroff'
-alias sboot 'systemctl reboot'
-alias spend 'systemctl suspend'
-alias ssleep 'systenctl sleep'
-alias loff 'loginctl poweroff'
-alias lboot 'loginctl reboot'
-alias lpend 'loginctl suspend'
-alias lsleep 'loginctl sleep'
+### Git Shortcuts ###
+abbr -a g git
+abbr -a gs 'git status -sb'
+abbr -a ga 'git add'
+abbr -a gc 'git commit -m'
+abbr -a gp 'git push'
+abbr -a gpl 'git pull'
+abbr -a gco 'git checkout'
+abbr -a gl 'git log --graph --pretty=format:"%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset"'
 
-# Web development
-alias xrun 'sudo /opt/lampp/lampp start'
-alias xstop 'sudo /opt/lampp/lampp stop'
-alias mxampp 'sudo ./opt/lamp/manager-linux-x64.run'
+### System Utilities ###
+abbr -a df 'df -hT xfs,ext4,vfat'
+abbr -a free 'free -h'
+abbr -a mk 'make -j(nproc)'
+abbr -a myip 'curl ifconfig.co'
 
-# Clipboard
-alias clipp 'xclip -sel clip'
+function mkcd
+    mkdir -p $argv && cd $argv
+end
 
-# Neovim
-alias nvim 'nvim +Nvdash'
+function clrk
+    read -P "Really remove all old kernels? [y/N] " confirm
+    string match -qi "y*" $confirm && sudo vkpurge rm all
+end
+
+### SSH Agent Management ###
+if not set -q SSH_AUTH_SOCK
+    eval (ssh-agent -c | sed 's/^echo/#echo/') >/dev/null
+    ssh-add -q ~/.ssh/id_ed25519 2>/dev/null
+end
+
+### Development Tools ###
+abbr -a dc docker-compose
+abbr -a k kubectl
+abbr -a t terraform
+
+function venv
+    set -l venv_dir .venv
+    python -m venv $venv_dir
+    source $venv_dir/bin/activate.fish
+end
+
+### System Controls ###
+abbr -a reboot 'sudo reboot'
+abbr -a poweroff 'sudo poweroff'
+abbr -a suspend 'systemctl suspend'
+
+### Clipboard Utilities ###
+abbr -a clipp 'xclip -selection clipboard'
+abbr -a clippaste 'xclip -selection clipboard -o'
+
+### Fun Utilities ###
+function cdown --argument-names minutes
+    set -l seconds (math $minutes \* 60)
+    termdown $seconds --font doom --exec-cmd 'notify-send "Timer Complete!"'
+end
+
+function cheat
+    curl -s "cheat.sh/$argv" | bat --language=man --paging=always
+end
+
+### Key Bindings ###
+bind \cr 'history | fzf --height 40% | read -l cmd; and commandline $cmd'
+
+### Final Initialization ###
+if status is-interactive && test -z "$DISPLAY" -a "$XDG_VTNR" = 1
+    exec startx -- -keeptty
+end
