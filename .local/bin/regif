@@ -1,25 +1,181 @@
 #!/bin/bash
 
-# Function to select a region of the screen
-select_region() {
-    echo "Select the area to record..."
-    sleep 1
-    rect=$(slop -f "%x %y %w %h %g %i") || exit 1
-    read -r X Y W H G ID < <(echo "$rect")
+# Screen GIF Recorder - Advanced Version
+# Records screen regions to GIF with preview and duration options
+
+# Default settings
+DEFAULT_FRAMERATE=30
+DEFAULT_SCALE=800
+DEFAULT_DURATION=0  # 0 = unlimited
+OUTPUT_DIR="$HOME/Videos"
+TEMP_FILE="/tmp/screen_rec_$$.mp4"
+CONFIG_FILE="$HOME/.screengifrc"
+
+# Print usage information
+usage() {
+    echo "Usage: $0 [OPTIONS]"
+    echo "Options:"
+    echo "  -f FRAMERATE    Recording framerate (default: $DEFAULT_FRAMERATE)"
+    echo "  -s SCALE        Output GIF width (default: $DEFAULT_SCALE)"
+    echo "  -d DIRECTORY    Output directory (default: $OUTPUT_DIR)"
+    echo "  -t SECONDS      Recording duration (default: unlimited)"
+    echo "  -p              Preview GIF after recording"
+    echo "  -q QUALITY      GIF quality (low, medium, high; default: medium)"
+    echo "  -r              Save settings as default"
+    echo "  -h              Show this help"
+    exit 1
 }
 
-# Function to record the screen
+# Load saved configuration if exists
+load_config() {
+    [ -f "$CONFIG_FILE" ] && source "$CONFIG_FILE"
+}
+
+# Save current settings to config
+save_config() {
+    cat > "$CONFIG_FILE" << EOF
+DEFAULT_FRAMERATE=$framerate
+DEFAULT_SCALE=$scale
+OUTPUT_DIR=$OUTPUT_DIR
+DEFAULT_DURATION=$duration
+QUALITY=$QUALITY
+EOF
+    echo "Settings saved to $CONFIG_FILE"
+}
+
+# Check dependencies
+check_dependencies() {
+    local deps=("slop" "ffmpeg" "notify-send")
+    for dep in "${deps[@]}"; do
+        if ! command -v "$dep" &>/dev/null; then
+            echo "Error: $dep is required but not installed"
+            exit 1
+        fi
+    done
+}
+
+# Select screen region
+select_region() {
+    echo "Select recording area (Ctrl+C to cancel)..."
+    local rect
+    rect=$(slop -f "%x %y %w %h" -b 2 -c 0.5,0.5,1,0.8 2>/dev/null) || {
+        echo "Selection cancelled"
+        exit 0
+    }
+    read -r X Y W H <<< "$rect"
+    [[ -z "$W" || "$W" -eq 0 ]] && {
+        echo "Error: Invalid selection"
+        exit 1
+    }
+}
+
+# Record screen with optional duration
 record_screen() {
-    ffmpeg -loglevel quiet -video_size "$W"x"$H" -framerate 60 -f x11grab -i :0.0+"$X","$Y" -vf "fps=10,scale=800:-1:flags=lanczos" -c:v gif "$output_gif"
+    local ffmpeg_cmd=(
+        ffmpeg -loglevel error -f x11grab
+        -video_size "${W}x${H}"
+        -framerate "$framerate"
+        -i :0.0+"$X","$Y"
+        -c:v libx264 -preset ultrafast
+    )
+    
+    [[ $duration -gt 0 ]] && ffmpeg_cmd+=(-t "$duration")
+    ffmpeg_cmd+=("$TEMP_FILE")
+
+    echo "Recording... ${duration:-∞}s (Ctrl+C to stop)"
+    trap 'echo -e "\nProcessing..."; process_gif "$output_file"' INT
+    "${ffmpeg_cmd[@]}" || {
+        echo "Recording failed"
+        rm -f "$TEMP_FILE"
+        exit 1
+    }
+}
+
+# Process recording into GIF based on quality setting
+process_gif() {
+    local output_file="$1"
+    local filters="fps=10,scale=$scale:-1:flags=lanczos"
+    
+    case "$QUALITY" in
+        low)    filters="fps=5,scale=$((scale/2)):-1:flags=area";;
+        high)   filters="fps=15,scale=$scale:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse";;
+    esac
+
+    ffmpeg -loglevel error -i "$TEMP_FILE" \
+           -vf "$filters" -c:v gif "$output_file" && {
+        rm -f "$TEMP_FILE"
+        notify_send "GIF Created" "Saved to $output_file"
+    } || {
+        echo "Conversion failed"
+        rm -f "$TEMP_FILE"
+        exit 1
+    }
+}
+
+# Preview GIF if requested
+preview_gif() {
+    [[ $preview -eq 1 ]] && {
+        command -v xdg-open &>/dev/null && xdg-open "$output_file" || echo "No preview available"
+    }
+}
+
+# Desktop notification wrapper
+notify_send() {
+    command -v notify-send &>/dev/null && notify-send "$1" "$2" || echo "$1: $2"
 }
 
 # Main function
 main() {
+    local preview=0 save_settings=0
+    load_config
+
+    # Parse options
+    while getopts "f:s:d:t:pq:rh" opt; do
+        case $opt in
+            f) framerate="$OPTARG";;
+            s) scale="$OPTARG";;
+            d) OUTPUT_DIR="$OPTARG";;
+            t) duration="$OPTARG";;
+            p) preview=1;;
+            q) QUALITY="$OPTARG";;
+            r) save_settings=1;;
+            h) usage;;
+            ?) usage;;
+        esac
+    done
+
+    # Set defaults
+    framerate=${framerate:-$DEFAULT_FRAMERATE}
+    scale=${scale:-$DEFAULT_SCALE}
+    duration=${duration:-$DEFAULT_DURATION}
+    QUALITY=${QUALITY:-medium}
+
+    # Validate inputs
+    [[ ! "$QUALITY" =~ ^(low|medium|high)$ ]] && {
+        echo "Error: Quality must be low, medium, or high"
+        exit 1
+    }
+    [[ ! "$framerate" =~ ^[0-9]+$ ]] && {
+        echo "Error: Framerate must be a number"
+        exit 1
+    }
+
+    # Setup output
+    mkdir -p "$OUTPUT_DIR" || {
+        echo "Error: Cannot access output directory"
+        exit 1
+    }
+    local timestamp=$(date "+%Y%m%d-%H%M%S")
+    output_file="$OUTPUT_DIR/screengif-$timestamp.gif"
+
+    check_dependencies
     select_region
-    current_time=$(date "+%Y%m%d-%H%M%S")
-    output_gif="$HOME/Videos/screengif-$current_time.gif"
     record_screen
-    echo "GIF saved as $output_gif"
+    process_gif "$output_file"
+    preview_gif
+    [[ $save_settings -eq 1 ]] && save_config
 }
 
-main
+# Execute with error handling
+set -e
+main "$@"
