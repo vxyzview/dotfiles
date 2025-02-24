@@ -1,118 +1,215 @@
 #!/bin/bash
-# shellcheck disable=SC2199
-# shellcheck disable=SC2086
-# shellcheck source=/dev/null
-#
+# Advanced Power Menu Script with Extended Features
 # Copyright (C) 2024-02 pyranix <pyranix@proton.me>
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# Licensed under Apache License 2.0
 
-SCRIPT_NAME="powermenu"
+readonly SCRIPT_NAME="PowerMenu"
+readonly CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/powermenu"
+readonly CONFIG_FILE="$CONFIG_DIR/config"
+readonly IMAGE_DIR="${IMAGE_DIR:-$HOME/.notify/images}"
+readonly LOG_FILE="$CONFIG_DIR/execution.log"
+readonly DEFAULT_TIMEOUT=3000
 
-# Power menu options
-options=(" Poweroff" " Reboot" " Sleep" " Hibernate" " Log Out")
+# Default configuration
+declare -A CONFIG=(
+  [timeout]="$DEFAULT_TIMEOUT"
+  [rofi_theme]="default"
+  [width]=25
+  [lines]=8
+  [sound_file]="/usr/share/sounds/freedesktop/stereo/complete.oga"
+  [log_level]=1  # 0=off, 1=normal, 2=verbose
+)
 
-# Function to check the init system
-detect_init_system() {
-  if command -v systemctl &> /dev/null; then
-    init_system="systemctl"
-  elif command -v loginctl &> /dev/null; then
-    init_system="loginctl"
-  else
-    dunstify -u low "Unable to detect init system. Exiting."
+# Actions: [command|description|icon|requires_root]
+declare -A ACTIONS=(
+  [" Power Off"]="poweroff|Shutting down system|power-button.png|1"
+  [" Reboot"]="reboot|Restarting system|refresh.png|1"
+  [" Sleep"]="suspend|Suspending system|sleep.png|0"
+  [" Hibernate"]="hibernate|Hibernating system|suspended.png|0"
+  [" Log Out"]="logout|Ending session|arrow.png|0"
+  [" Lock"]="lock|Locking screen|lock.png|0"
+  [" Shutdown Timer"]="timer|Scheduled shutdown|clock.png|1"
+  [" Switch User"]="switch|Switching user session|users.png|0"
+)
+
+# Load configuration
+load_config() {
+  [[ -d "$CONFIG_DIR" ]] || mkdir -p "$CONFIG_DIR"
+  [[ -f "$CONFIG_FILE" ]] || setup_config
+  source "$CONFIG_FILE"
+}
+
+# Setup default configuration
+setup_config() {
+  cat > "$CONFIG_FILE" << EOF
+# PowerMenu Configuration
+CONFIG[timeout]=$DEFAULT_TIMEOUT
+CONFIG[rofi_theme]="default"
+CONFIG[width]=25
+CONFIG[lines]=8
+CONFIG[sound_file]="/usr/share/sounds/freedesktop/stereo/complete.oga"
+CONFIG[log_level]=1
+EOF
+}
+
+# Logging function
+log() {
+  local level="$1" msg="$2"
+  [[ ${CONFIG[log_level]} -eq 0 ]] && return
+  [[ ${CONFIG[log_level]} -eq 1 && "$level" == "DEBUG" ]] && return
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $msg" >> "$LOG_FILE"
+}
+
+# Check dependencies
+check_dependencies() {
+  local deps=(rofi dunstify wmctrl)  # wmctrl for multi-monitor support
+  local missing=()
+  
+  for dep in "${deps[@]}"; do
+    command -v "$dep" &>/dev/null || missing+=("$dep")
+  done
+  
+  [[ ${#missing[@]} -gt 0 ]] && {
+    notify "CRITICAL" "Missing: ${missing[*]}"
+    log "ERROR" "Missing dependencies: ${missing[*]}"
     exit 1
+  }
+}
+
+# Detect system capabilities
+detect_system() {
+  if command -v systemctl &>/dev/null; then
+    INIT_SYSTEM="systemctl"
+    LOCK_CMD="xdg-screensaver lock"
+    SUDO="sudo -n"  # Non-interactive sudo
+  elif command -v loginctl &>/dev/null; then
+    INIT_SYSTEM="loginctl"
+    LOCK_CMD="loginctl lock-session"
+    SUDO="loginctl"
+  else
+    notify "CRITICAL" "No supported init system"
+    log "ERROR" "Init system detection failed"
+    exit 1
+  fi
+  readonly INIT_SYSTEM LOCK_CMD SUDO
+}
+
+# Notification with multi-monitor support
+notify() {
+  local urgency="$1" msg="$2" icon="${3:-system}"
+  local sound="${CONFIG[sound_file]:-none}"
+  local monitors=$(wmctrl -d | wc -l)
+  
+  for ((i=0; i<monitors; i++)); do
+    dunstify -u "${urgency,,}" -t "${CONFIG[timeout]}" -i "$IMAGE_DIR/$icon" \
+      "$SCRIPT_NAME" "$msg" ${sound:+--hints=string:sound-file:"$sound"} &
+  done
+  wait
+  log "INFO" "Notification sent: $msg"
+}
+
+# Confirmation with custom message
+confirm_action() {
+  local action="$1" desc="$2"
+  echo -e "Yes\nNo" | rofi -dmenu -i -p "$desc?" -width 20 \
+    -lines 2 -timeout 15 -theme "${CONFIG[rofi_theme]}" >/dev/null
+}
+
+# Timer selection for scheduled shutdown
+select_timer() {
+  local times=("5 min" "15 min" "30 min" "1 hr" "Custom")
+  local selected=$(printf '%s\n' "${times[@]}" | rofi -dmenu -i -p "Shutdown in" \
+    -width 15 -lines 5 -theme "${CONFIG[rofi_theme]}")
+  
+  case "$selected" in
+    "5 min") echo 300 ;;
+    "15 min") echo 900 ;;
+    "30 min") echo 1800 ;;
+    "1 hr") echo 3600 ;;
+    "Custom") 
+      local mins=$(rofi -dmenu -p "Minutes" -width 15 -lines 1 -theme "${CONFIG[rofi_theme]}")
+      echo $((mins * 60))
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+# Execute action with advanced handling
+execute_action() {
+  local cmd="$1" desc="$2" icon="$3" root="$4"
+  local exec_cmd
+  
+  [[ -f "$CONFIG_DIR/pre-hook.sh" ]] && source "$CONFIG_DIR/pre-hook.sh"
+  
+  case "$cmd" in
+    "timer")
+      local seconds=$(select_timer) || return 1
+      notify "NORMAL" "Shutdown scheduled in $((seconds/60)) minutes" "$icon"
+      log "INFO" "Scheduled shutdown in $seconds seconds"
+      sleep "$seconds" && $SUDO $INIT_SYSTEM poweroff &
+      ;;
+    "switch")
+      local sessions=$(loginctl list-sessions --no-legend | awk '{print $1}')
+      local selected=$(echo "$sessions" | rofi -dmenu -i -p "Select Session" \
+        -width 20 -theme "${CONFIG[rofi_theme]}")
+      [[ -n "$selected" ]] && {
+        notify "NORMAL" "Switching to session $selected" "$icon"
+        loginctl activate "$selected"
+        log "INFO" "Switched to session $selected"
+      }
+      ;;
+    "lock") 
+      notify "NORMAL" "$desc..." "$icon"
+      $LOCK_CMD ;;
+    "logout")
+      notify "NORMAL" "$desc..." "$icon"
+      case "$INIT_SYSTEM" in
+        "systemctl") systemctl exit ;;
+        "loginctl") loginctl terminate-session "${XDG_SESSION_ID:-self}" ;;
+      esac ;;
+    *)
+      notify "NORMAL" "$desc..." "$icon"
+      exec_cmd="$INIT_SYSTEM $cmd"
+      [[ "$root" -eq 1 ]] && exec_cmd="$SUDO $exec_cmd"
+      $exec_cmd ;;
+  esac
+  
+  [[ -f "$CONFIG_DIR/post-hook.sh" ]] && source "$CONFIG_DIR/post-hook.sh"
+  log "INFO" "Executed: $cmd"
+}
+
+# Main execution
+main() {
+  load_config
+  check_dependencies
+  detect_system
+  
+  local selected options=()
+  for key in "${!ACTIONS[@]}"; do
+    options+=("$key")
+  done
+  
+  selected=$(printf '%s\n' "${options[@]}" | rofi -dmenu -i -p "$SCRIPT_NAME" \
+    -width "${CONFIG[width]}" -lines "${CONFIG[lines]}" -theme "${CONFIG[rofi_theme]}") || exit 0
+  
+  local action_data="${ACTIONS[$selected]}"
+  [[ -z "$action_data" ]] && {
+    notify "LOW" "Invalid selection"
+    log "WARNING" "Invalid selection: $selected"
+    exit 1
+  }
+  
+  IFS='|' read -r cmd desc icon root <<< "$action_data"
+  
+  if [[ $(confirm_action "${selected#* }" "$desc") == "Yes" ]]; then
+    execute_action "$cmd" "$desc" "$icon" "$root"
+  else
+    notify "NORMAL" "${selected#* } canceled" "multiply.png"
+    log "INFO" "Action canceled: ${selected#* }"
   fi
 }
 
-# Determine init system
-detect_init_system
-
-# Set commands based on init system
-case $init_system in
-  "systemctl")
-    power_command="systemctl poweroff"
-    reboot_command="systemctl reboot"
-    sleep_command="systemctl suspend"
-    hibernate_command="systemctl hibernate"
-    logout_command="systemctl exit"
-    ;;
-  "loginctl")
-    power_command="loginctl poweroff"
-    reboot_command="loginctl reboot"
-    sleep_command="loginctl suspend"
-    hibernate_command="loginctl hibernate"
-    logout_command="loginctl terminate-session"
-    ;;
-  *)
-    dunstify -u low "Unsupported init system. Exiting."
-    exit 1
-    ;;
-esac
-
-# Function to confirm the action
-confirm_option() {
-  confirm=$(echo -e "Yes\nNo" | rofi -dmenu -i -p "Are you sure?" -columns 1 -width 10)
-  [[ "$confirm" == "Yes" ]]
-}
-
-# Main script
-
-selected_option=$(printf '%s\n' "${options[@]}" | rofi -dmenu -i -p "$SCRIPT_NAME" -columns 1 -width 20) || exit 1
-
-case $selected_option in
-    " Poweroff")
-        if confirm_option; then
-            dunstify -i "$HOME/.notify/images/power-button.png" "Powering off..."
-            $power_command
-        else
-            dunstify -i "$HOME/.notify/images/multiply.png" "Power off canceled"
-        fi
-        ;;
-    " Reboot")
-        if confirm_option; then
-            dunstify -i "$HOME/.notify/images/refresh.png" "Rebooting..."
-            $reboot_command
-        else
-            dunstify -i "$HOME/.notify/images/multiply.png" "Reboot canceled"
-        fi
-        ;;
-    " Sleep")
-        if confirm_option; then
-            dunstify -i "$HOME/.notify/images/sleep.png" "Putting system to sleep..."
-            $sleep_command
-        else
-            dunstify -i "$HOME/.notify/images/multiply.png" "Sleep canceled"
-        fi
-        ;;
-    " Hibernate")
-        if confirm_option; then
-            dunstify -i "$HOME/.notify/images/suspended.png" "Hibernating..."
-            $hibernate_command
-        else
-            dunstify -i "$HOME/.notify/images/multiply.png" "Hibernation canceled"
-        fi
-        ;;
-    " Log Out")
-        if confirm_option; then
-            dunstify -i "$HOME/.notify/images/arrow.png" "Logging out..."
-            $logout_command
-        else
-            dunstify -i "$HOME/.notify/images/multiply.png" "Log out canceled"
-        fi
-        ;;
-    *)
-        dunstify -u low "Invalid option"
-        ;;
-esac
-
+# Signal handling
+trap 'notify "CRITICAL" "Terminated: $?"; log "ERROR" "Script terminated: $?"; exit 1' ERR INT TERM
+main
 exit 0
