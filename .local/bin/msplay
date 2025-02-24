@@ -1,58 +1,238 @@
 #!/bin/bash
 
-# Directory where music files are stored
+# Configuration
 MUSIC_DIR="$HOME/Music"
+PID_FILE="/tmp/music_player.pid"
+SOCKET_FILE="/tmp/music_player_socket"
+STATE_FILE="/tmp_music_player_state"
+ARTWORK_FILE="/tmp/music_player_artwork.jpg"
 
-# Check if the Music directory exists
-if [ ! -d "$MUSIC_DIR" ]; then
-    echo "Music directory not found: $MUSIC_DIR"
-    exit 1
-fi
-
-# Function to extract basename (filename without path and extension)
-get_clean_name() {
-    filename="$1"
-    # Use basename to get filename without path, then remove file extension
-    basename "$(basename "$filename" | sed 's/\.[^.]*$//')"
-}
-
-# Function to play music using ffplay for audio playback
-play_music() {
-    selected_file="$1"
-    echo "Playing: $(get_clean_name "$selected_file")"
-    nohup ffplay -nodisp -autoexit -loglevel panic "$selected_file" >/dev/null 2>&1 &
-}
-
-# Use rofi to present start or stop options
-action=$(echo -e "Start music\nStop music" | rofi -dmenu -i -p "Choose action: ")
-
-# Based on the chosen action, either start or stop the music
-if [ "$action" = "Start music" ]; then
-    # List all music files in the directory (supporting common lossless formats)
-    music_files=$(find "$MUSIC_DIR" -type f \( -name "*.mp3" -o -name "*.wav" -o -name "*.ogg" -o -name "*.flac" \))
-
-    # Check if there are no music files
-    if [ -z "$music_files" ]; then
-        echo "No music files found in $MUSIC_DIR"
+# Check dependencies
+for cmd in rofi mpv ffprobe notify-send jq socat; do
+    if ! command -v "$cmd" &>/dev/null; then
+        echo "Error: $cmd is required but not installed."
         exit 1
     fi
+done
 
-    # Use rofi to select a music file to play (clean names without path or extension)
-    selected=$(echo "$music_files" | while read -r file; do get_clean_name "$file"; done | rofi -dmenu -i -p "Select a song: ")
+# Ensure music directory exists
+[ ! -d "$MUSIC_DIR" ] && { echo "Error: Music directory not found: $MUSIC_DIR"; exit 1; }
 
-    # Find the full path of the selected music file based on its clean name
-    selected_file=$(echo "$music_files" | grep "$(echo "$selected" | sed 's/[][\.^$*+?(){}|]/\\&/g')")
+# Clean filename (no path or extension)
+clean_name() {
+    basename "$1" | sed 's/\.[^.]*$//'
+}
 
-    # If user selects a file, play it using ffplay in the background
-    if [ -n "$selected_file" ]; then
-        play_music "$selected_file"
+# Extract metadata and artwork
+get_metadata() {
+    local file="$1"
+    ffprobe -v error -show_entries stream=sample_rate,bits_per_raw_sample:format=duration:tag=artist,title -of json "$file" 2>/dev/null | \
+        jq -r '.streams[0].sample_rate, .streams[0].bits_per_raw_sample // "N/A", .format.duration, .format.tags.artist // "Unknown", .format.tags.title // "Unknown"'
+    # Extract artwork if available
+    ffprobe -v error -show_entries stream=index:disposition=attached_pic -of json "$file" 2>/dev/null | \
+        jq -r '.streams[] | select(.disposition.attached_pic == 1) | .index' | \
+        xargs -I {} ffmpeg -i "$file" -map 0:{} -c copy "$ARTWORK_FILE" -y >/dev/null 2>&1 || rm -f "$ARTWORK_FILE"
+}
+
+# Play a single music file
+play_file() {
+    local file="$1" volume="$2" loop="$3" device="$4" eq="$5"
+    local metadata=($(get_metadata "$file"))
+    local sample_rate="${metadata[0]}"
+    local bit_depth="${metadata[1]}"
+    local duration="${metadata[2]}"
+    local artist="${metadata[3]}"
+    local title="${metadata[4]}"
+    
+    notify-send "Music Player" "Playing: $artist - $title\nSample Rate: $sample_rate Hz\nBit Depth: $bit_depth\nDuration: ${duration}s" \
+        $([ -f "$ARTWORK_FILE" ] && echo "--icon=$ARTWORK_FILE")
+    
+    mpv --no-video --volume="$volume" --audio-device="$device" \
+        --input-ipc-server="$SOCKET_FILE" $([ "$loop" = "true" ] && echo "--loop-file=inf") \
+        $([ -n "$eq" ] && echo "--af=equalizer=$eq") --audio-buffer=0 --audio-channels=2 "$file" >/dev/null 2>&1 &
+    echo $! > "$PID_FILE"
+}
+
+# Play a playlist
+play_playlist() {
+    local files=("$@") volume="$2" loop="$3" device="$4" eq="$5"
+    local playlist_file="/tmp/music_player_playlist.m3u"
+    printf '%s\n' "${files[@]}" > "$playlist_file"
+    notify-send "Music Player" "Playing playlist: ${#files[@]} songs"
+    mpv --no-video --volume="$volume" --audio-device="$device" \
+        --input-ipc-server="$SOCKET_FILE" $([ "$loop" = "true" ] && echo "--loop-playlist=inf") \
+        $([ -n "$eq" ] && echo "--af=equalizer=$eq") --audio-buffer=0 --audio-channels=2 --playlist="$playlist_file" >/dev/null 2>&1 &
+    echo $! > "$PID_FILE"
+}
+
+# Stop playback
+stop_music() {
+    [ -f "$PID_FILE" ] && kill $(cat "$PID_FILE") && rm -f "$PID_FILE" "$SOCKET_FILE" "$STATE_FILE" "$ARTWORK_FILE"
+}
+
+# Control mpv via socket
+mpv_control() {
+    local command="$1" value="$2"
+    [ ! -S "$SOCKET_FILE" ] && return
+    echo "{ \"command\": [\"$command\", \"$value\"] }" | socat - "$SOCKET_FILE" >/dev/null 2>&1
+}
+
+# Get music files
+get_music_files() {
+    find "$MUSIC_DIR" -type f \( -iname "*.mp3" -o -iname "*.wav" -o -iname "*.ogg" -o -iname "*.flac" \
+        -o -iname "*.alac" -o -iname "*.m4a" -o -iname "*.dsf" -o -iname "*.dff" \)
+}
+
+# Volume control
+get_volume() {
+    local volume=$(printf "25\n50\n75\n100" | rofi -dmenu -i -p "Set volume (0-100): ")
+    [ -z "$volume" ] && volume=50
+    echo "$volume"
+}
+
+# Loop control
+get_loop() {
+    local loop=$(printf "No\nYes" | rofi -dmenu -i -p "Loop playback? ")
+    [ "$loop" = "Yes" ] && echo "true" || echo "false"
+}
+
+# Audio device selection
+get_audio_device() {
+    local devices=$(mpv --audio-device=help | grep -oP "'\K[^']+" | grep -v "auto")
+    local device=$(echo "$devices" | rofi -dmenu -i -p "Select audio device: ")
+    [ -z "$device" ] && device="auto"
+    echo "$device"
+}
+
+# Equalizer settings
+get_equalizer() {
+    local eq_presets=(
+        "Flat:0:0:0:0:0:0:0:0:0:0"
+        "Bass Boost:6:4:2:0:0:0:-2:-4:-6:-8"
+        "Treble Boost:-6:-4:-2:0:0:2:4:6:8:10"
+        "Vocal Clarity:0:0:2:4:6:4:2:0:0:0"
+    )
+    local preset=$(printf '%s\n' "${eq_presets[@]}" | cut -d: -f1 | rofi -dmenu -i -p "Select equalizer preset: ")
+    [ -z "$preset" ] && return
+    echo "${eq_presets[@]}" | grep "^$preset:" | cut -d: -f2-
+}
+
+# Queue management
+manage_queue() {
+    local music_files songs selected file
+    mapfile -t music_files < <(get_music_files)
+    [ ${#music_files[@]} -eq 0 ] && { notify-send "Music Player" "No music files found in $MUSIC_DIR"; return; }
+    songs=$(printf '%s\n' "${music_files[@]}" | while read -r f; do clean_name "$f"; done)
+    selected=$(echo "$songs" | rofi -dmenu -multi-select -i -p "Add to queue (multi-select): ")
+    [ -z "$selected" ] && return
+    while IFS= read -r song; do
+        file=$(printf '%s\n' "${music_files[@]}" | grep -F -m 1 "$song")
+        mpv_control "loadfile" "$file" "append-play"
+        notify-send "Music Player" "Added to queue: $song"
+    done <<< "$selected"
+}
+
+# Main menu
+main_menu() {
+    local action volume loop device eq
+    action=$(printf "Play single song\nPlay all (sequential)\nPlay all (shuffle)\nPause/Resume\nSeek forward\nSeek backward\nStop music\nNow playing\nAdd to queue\nSet equalizer" | rofi -dmenu -i -p "Music Player: ")
+    case "$action" in
+        "Play single song")
+            volume=$(get_volume)
+            loop=$(get_loop)
+            device=$(get_audio_device)
+            eq=$(get_equalizer)
+            select_and_play_single "$volume" "$loop" "$device" "$eq"
+            ;;
+        "Play all (sequential)")
+            volume=$(get_volume)
+            loop=$(get_loop)
+            device=$(get_audio_device)
+            eq=$(get_equalizer)
+            play_all sequential "$volume" "$loop" "$device" "$eq"
+            ;;
+        "Play all (shuffle)")
+            volume=$(get_volume)
+            loop=$(get_loop)
+            device=$(get_audio_device)
+            eq=$(get_equalizer)
+            play_all shuffle "$volume" "$loop" "$device" "$eq"
+            ;;
+        "Pause/Resume")
+            mpv_control "cycle" "pause"
+            notify-send "Music Player" "Toggled pause/resume"
+            ;;
+        "Seek forward")
+            mpv_control "seek" "10"
+            notify-send "Music Player" "Seek forward 10s"
+            ;;
+        "Seek backward")
+            mpv_control "seek" "-10"
+            notify-send "Music Player" "Seek backward 10s"
+            ;;
+        "Stop music")
+            stop_music
+            notify-send "Music Player" "Playback stopped"
+            ;;
+        "Now playing")
+            show_now_playing
+            ;;
+        "Add to queue")
+            manage_queue
+            ;;
+        "Set equalizer")
+            eq=$(get_equalizer)
+            [ -n "$eq" ] && mpv_control "af" "set equalizer=$eq" && notify-send "Music Player" "Equalizer set: $eq"
+            ;;
+        *)
+            exit 0
+            ;;
+    esac
+}
+
+# Select and play a single song
+select_and_play_single() {
+    local volume="$1" loop="$2" device="$3" eq="$4" music_files songs selected file
+    mapfile -t music_files < <(get_music_files)
+    [ ${#music_files[@]} -eq 0 ] && { notify-send "Music Player" "No music files found in $MUSIC_DIR"; exit 1; }
+    songs=$(printf '%s\n' "${music_files[@]}" | while read -r f; do clean_name "$f"; done)
+    selected=$(echo "$songs" | rofi -dmenu -i -p "Select a song: ")
+    file=$(printf '%s\n' "${music_files[@]}" | grep -F -m 1 "$selected")
+    [ -z "$file" ] && { notify-send "Music Player" "Error: Song not found"; exit 1; }
+    stop_music
+    play_file "$file" "$volume" "$loop" "$device" "$eq"
+}
+
+# Play all songs
+play_all() {
+    local mode="$1" volume="$2" loop="$3" device="$4" eq="$5" music_files
+    mapfile -t music_files < <(get_music_files)
+    [ ${#music_files[@]} -eq 0 ] && { notify-send "Music Player" "No music files found in $MUSIC_DIR"; exit 1; }
+    stop_music
+    if [ "$mode" = "shuffle" ]; then
+        music_files=($(printf '%s\n' "${music_files[@]}" | shuf))
+    fi
+    play_playlist "${music_files[@]}" "$volume" "$loop" "$device" "$eq"
+}
+
+# Show now playing status
+show_now_playing() {
+    if [ -S "$SOCKET_FILE" ]; then
+        local status=$(echo '{ "command": ["get_property", "playback-time"] }' | socat - "$SOCKET_FILE" | jq -r '.data // "0"')
+        local duration=$(echo '{ "command": ["get_property", "duration"] }' | socat - "$SOCKET_FILE" | jq -r '.data // "0"')
+        local filename=$(echo '{ "command": ["get_property", "filename"] }' | socat - "$SOCKET_FILE" | jq -r '.data // "unknown"')
+        local artist=$(echo '{ "command": ["get_property", "metadata/by-key/artist"] }' | socat - "$SOCKET_FILE" | jq -r '.data // "Unknown"')
+        local paused=$(echo '{ "command": ["get_property", "pause"] }' | socat - "$SOCKET_FILE" | jq -r '.data')
+        local progress=$(awk "BEGIN {print int($status / $duration * 100)}")
+        local state=$([ "$paused" = "true" ] && echo "Paused" || echo "Playing")
+        notify-send "Now Playing" "$state: $artist - $(clean_name "$filename")\nProgress: $progress% (${status}s / ${duration}s)" \
+            $([ -f "$ARTWORK_FILE" ] && echo "--icon=$ARTWORK_FILE")
     else
-        echo "Error: Selected file not found."
-        exit 1
+        notify-send "Music Player" "No song currently playing"
     fi
-elif [ "$action" = "Stop music" ]; then
-    # Stop any existing ffplay process playing music
-    pkill -f "ffplay -nodisp -autoexit -loglevel panic"
-fi
+}
+
+# Run the player
+main_menu
 
 exit 0
