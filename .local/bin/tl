@@ -1,88 +1,413 @@
 #!/bin/bash
 
+# Check for required dependencies
+for cmd in curl jq dialog; do
+    if ! command -v "$cmd" &>/dev/null; then
+        echo "Error: $cmd is required but not installed. Please install it."
+        exit 1
+    fi
+done
+# Optional dependencies
+CLIPBOARD_AVAILABLE=$(command -v xclip &>/dev/null && echo 1 || echo 0)
+SPEECH_AVAILABLE=$(command -v espeak &>/dev/null && echo 1 || echo 0)
+OCR_AVAILABLE=$(command -v tesseract &>/dev/null && echo 1 || echo 0)
+VOICE_AVAILABLE=$(command -v sox &>/dev/null && echo 1 || echo 0)
+
+# Define constants
+HISTORY_FILE="$HOME/.translate_history"
+FAVORITES_FILE="$HOME/.translate_favorites"
+SETTINGS_FILE="$HOME/.translate_settings"
+PHRASEBOOK_FILE="$HOME/.translate_phrasebook"
+TRANSLATION_LOG="$HOME/translations_$(date '+%Y%m%d').txt"
+mkdir -p "$(dirname "$HISTORY_FILE")"
+
+# Load settings (defaults if file doesn’t exist)
+AUTO_CLIPBOARD=0
+AUTO_SAVE=0
+TRANSLATION_SERVICE="google" # google or libretranslate
+LIVE_PREVIEW=0
+[[ -f "$SETTINGS_FILE" ]] && source "$SETTINGS_FILE"
+
 # Define language code and name mappings
-declare -A language_codes=(
-    ["af"]="Afrikaans" ["sq"]="Albanian" ["am"]="Amharic" ["ar"]="Arabic" ["hy"]="Armenian"
+declare -A LANGUAGE_CODES=(
+    ["auto"]="Auto-Detect" ["af"]="Afrikaans" ["sq"]="Albanian" ["am"]="Amharic" ["ar"]="Arabic" ["hy"]="Armenian"
     ["az"]="Azerbaijani" ["eu"]="Basque" ["be"]="Belarusian" ["bn"]="Bengali" ["bs"]="Bosnian"
     ["bg"]="Bulgarian" ["ca"]="Catalan" ["ceb"]="Cebuano" ["ny"]="Chichewa" ["zh-CN"]="Chinese (Simplified)"
-    ["zh-TW"]="Chinese (Traditional)" ["co"]="Corsican" ["hr"]="Croatian" ["cs"]="Czech" ["da"]="Danish"
-    ["nl"]="Dutch" ["en"]="English" ["eo"]="Esperanto" ["et"]="Estonian" ["tl"]="Filipino" ["fi"]="Finnish"
-    ["fr"]="French" ["fy"]="Frisian" ["gl"]="Galician" ["ka"]="Georgian" ["de"]="German" ["el"]="Greek"
-    ["gu"]="Gujarati" ["ht"]="Haitian Creole" ["ha"]="Hausa" ["haw"]="Hawaiian" ["iw"]="Hebrew" ["hi"]="Hindi"
-    ["hmn"]="Hmong" ["hu"]="Hungarian" ["is"]="Icelandic" ["ig"]="Igbo" ["id"]="Indonesian" ["ga"]="Irish"
-    ["it"]="Italian" ["ja"]="Japanese" ["jv"]="Javanese" ["kn"]="Kannada" ["kk"]="Kazakh" ["km"]="Khmer"
-    ["ko"]="Korean" ["ku"]="Kurdish (Kurmanji)" ["ky"]="Kyrgyz" ["lo"]="Lao" ["la"]="Latin" ["lv"]="Latvian"
-    ["lt"]="Lithuanian" ["lb"]="Luxembourgish" ["mk"]="Macedonian" ["mg"]="Malagasy" ["ms"]="Malay"
-    ["ml"]="Malayalam" ["mt"]="Maltese" ["mi"]="Maori" ["mr"]="Marathi" ["mn"]="Mongolian" ["my"]="Myanmar (Burmese)"
-    ["ne"]="Nepali" ["no"]="Norwegian" ["or"]="Odia (Oriya)" ["ps"]="Pashto" ["fa"]="Persian" ["pl"]="Polish"
-    ["pt"]="Portuguese" ["pa"]="Punjabi" ["ro"]="Romanian" ["ru"]="Russian" ["sm"]="Samoan" ["gd"]="Scots Gaelic"
-    ["sr"]="Serbian" ["st"]="Sesotho" ["sn"]="Shona" ["sd"]="Sindhi" ["si"]="Sinhala" ["sk"]="Slovak"
-    ["sl"]="Slovenian" ["so"]="Somali" ["es"]="Spanish" ["su"]="Sundanese" ["sw"]="Swahili" ["sv"]="Swedish"
-    ["tg"]="Tajik" ["ta"]="Tamil" ["te"]="Telugu" ["th"]="Thai" ["tr"]="Turkish" ["uk"]="Ukrainian"
-    ["ur"]="Urdu" ["ug"]="Uyghur" ["uz"]="Uzbek" ["vi"]="Vietnamese" ["cy"]="Welsh" ["xh"]="Xhosa"
-    ["yi"]="Yiddish" ["yo"]="Yoruba" ["zu"]="Zulu"
+    ["co"]="Corsican" ["hr"]="Croatian" ["cs"]="Czech" ["da"]="Danish" ["nl"]="Dutch" ["en"]="English"
+    ["eo"]="Esperanto" ["et"]="Estonian" ["tl"]="Filipino" ["fi"]="Finnish" ["fr"]="French" ["fy"]="Frisian"
+    ["gl"]="Galician" ["ka"]="Georgian" ["de"]="German" ["el"]="Greek" ["gu"]="Gujarati" ["ht"]="Haitian Creole"
+    ["ha"]="Hausa" ["haw"]="Hawaiian" ["iw"]="Hebrew" ["hi"]="Hindi" ["hmn"]="Hmong" ["hu"]="Hungarian"
+    ["is"]="Icelandic" ["ig"]="Igbo" ["id"]="Indonesian" ["ga"]="Irish" ["it"]="Italian" ["ja"]="Japanese"
+    ["jv"]="Javanese" ["kn"]="Kannada" ["kk"]="Kazakh" ["km"]="Khmer" ["ko"]="Korean" ["ku"]="Kurdish (Kurmanji)"
+    ["ky"]="Kyrgyz" ["lo"]="Lao" ["la"]="Latin" ["lv"]="Latvian" ["lt"]="Lithuanian" ["lb"]="Luxembourgish"
+    ["mk"]="Macedonian" ["mg"]="Malagasy" ["ms"]="Malay" ["ml"]="Malayalam" ["mt"]="Maltese" ["mi"]="Maori"
+    ["mr"]="Marathi" ["mn"]="Mongolian" ["my"]="Myanmar (Burmese)" ["ne"]="Nepali" ["no"]="Norwegian"
+    ["ps"]="Pashto" ["fa"]="Persian" ["pl"]="Polish" ["pt"]="Portuguese" ["pa"]="Punjabi" ["ro"]="Romanian"
+    ["ru"]="Russian" ["sm"]="Samoan" ["gd"]="Scots Gaelic" ["sr"]="Serbian" ["st"]="Sesotho" ["sn"]="Shona"
+    ["sd"]="Sindhi" ["si"]="Sinhala" ["sk"]="Slovak" ["sl"]="Slovenian" ["so"]="Somali" ["es"]="Spanish"
+    ["su"]="Sundanese" ["sw"]="Swahili" ["sv"]="Swedish" ["tg"]="Tajik" ["ta"]="Tamil" ["te"]="Telugu"
+    ["th"]="Thai" ["tr"]="Turkish" ["uk"]="Ukrainian" ["ur"]="Urdu" ["uz"]="Uzbek" ["vi"]="Vietnamese"
+    ["cy"]="Welsh" ["xh"]="Xhosa" ["yi"]="Yiddish" ["yo"]="Yoruba" ["zu"]="Zulu"
 )
 
-# Function to display language selection menu
-display_language_menu() {
-    echo "Available Languages:"
-    echo "-------------------"
-    for code in "${!language_codes[@]}"; do
-        printf "[%s]\t%s\n" "$code" "${language_codes[$code]}"
-    done
-}
+# Build language menu for dialog
+LANGUAGE_MENU=()
+for code in "${!LANGUAGE_CODES[@]}"; do
+    LANGUAGE_MENU+=("$code" "${LANGUAGE_CODES[$code]}")
+done
 
-# Function to perform text translation
-translate_text() {
-    local from_lang="$1"
-    local to_lang="$2"
-    local text="$3"
-
-    local url="https://translate.googleapis.com/translate_a/single?client=gtx&sl=${from_lang}&tl=${to_lang}&dt=t&q=$(urlencode "$text")"
-    local translation=$(curl -sSL "$url" | sed 's/\[\[\[\"//' | cut -d '"' -f 1)
-    echo "$translation"
-}
-
-# Function to URL encode the text for use in curl
+# Function to URL encode text
 urlencode() {
     echo -n "$1" | jq -s -R -r @uri
 }
 
+# Function to perform text translation
+translate_text() {
+    local from_lang="$1" to_lang="$2" text="$3"
+    if [[ "$TRANSLATION_SERVICE" == "google" ]]; then
+        local url="https://translate.googleapis.com/translate_a/single?client=gtx&sl=${from_lang}&tl=${to_lang}&dt=t&q=$(urlencode "$text")"
+        local result=$(curl -sSL "$url" 2>/dev/null)
+        [[ -z "$result" ]] && return 1
+        echo "$result" | sed 's/\[\[\[\"//' | cut -d '"' -f 1
+    else # LibreTranslate
+        local url="https://libretranslate.de/translate"
+        local result=$(curl -sSL -X POST "$url" -d "q=$text" -d "source=$from_lang" -d "target=$to_lang" -d "format=text" 2>/dev/null | jq -r '.translatedText')
+        [[ -z "$result" || "$result" == "null" ]] && return 1
+        echo "$result"
+    fi
+}
+
 # Function to copy text to clipboard
 copy_to_clipboard() {
+    [[ $CLIPBOARD_AVAILABLE -eq 0 ]] && return
     echo -n "$1" | xclip -selection clipboard
-    echo "Translated text has been copied to the clipboard. You can now paste it (Ctrl+V) into another application."
 }
 
-# Main function
+# Function to speak text
+speak_text() {
+    [[ $SPEECH_AVAILABLE -eq 0 ]] && return
+    echo "$1" | espeak -s 150 2>/dev/null
+}
+
+# Function to extract text from image (OCR)
+extract_text_from_image() {
+    [[ $OCR_AVAILABLE -eq 0 ]] && return 1
+    local file="$1"
+    tesseract "$file" stdout 2>/dev/null
+}
+
+# Function to record voice input
+record_voice_input() {
+    [[ $VOICE_AVAILABLE -eq 0 ]] && return 1
+    local tmp_audio=$(mktemp --suffix=.wav)
+    dialog --msgbox "Recording... Press OK to stop." 10 30
+    sox -t alsa default "$tmp_audio" silence 1 0.1 1% 1 1.0 1% &>/dev/null
+    local text=$(curl -s -F "file=@$tmp_audio" -F "model=whisper-1" "https://api.openai.com/v1/audio/transcriptions" 2>/dev/null | jq -r '.text')
+    [[ -z "$text" ]] && text=$(sox "$tmp_audio" -t raw - | whisper --model tiny 2>/dev/null) # Fallback (requires whisper locally)
+    rm "$tmp_audio"
+    echo "$text"
+}
+
+# Function to lookup dictionary definition
+dictionary_lookup() {
+    local word="$1"
+    local result=$(curl -s "https://api.dictionaryapi.dev/api/v2/entries/en/$word" | jq -r '.[0].meanings[0].definitions[0].definition' 2>/dev/null)
+    [[ "$result" == "null" || -z "$result" ]] && echo "No definition found." || echo "$result"
+}
+
+# Function to save translation
+save_translation() {
+    local text="$1" from_lang="$2" to_lang="$3" translated="$4"
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    echo "[$timestamp] $from_lang -> $to_lang: $text -> $translated" >> "$TRANSLATION_LOG"
+    echo "$from_lang|$to_lang|$text|$translated|$timestamp" >> "$HISTORY_FILE"
+}
+
+# Function to add to favorites
+add_to_favorites() {
+    local from_lang="$1" to_lang="$2"
+    echo "$from_lang|$to_lang" >> "$FAVORITES_FILE"
+    dialog --msgbox "Added $from_lang -> $to_lang to favorites!" 10 40
+}
+
+# Function to load favorites
+load_favorites() {
+    if [[ ! -s "$FAVORITES_FILE" ]]; then
+        echo ""
+        return
+    fi
+    local favs=()
+    while IFS='|' read -r from_lang to_lang; do
+        favs+=("$from_lang|$to_lang" "${LANGUAGE_CODES[$from_lang]} -> ${LANGUAGE_CODES[$to_lang]}")
+    done < "$FAVORITES_FILE"
+    echo "${favs[@]}"
+}
+
+# Function to suggest language pairs from history
+suggest_pairs() {
+    if [[ ! -s "$HISTORY_FILE" ]]; then
+        echo ""
+        return
+    fi
+    local suggestions=()
+    awk -F'|' '{print $1 "|" $2}' "$HISTORY_FILE" | sort | uniq -c | sort -nr | head -n 5 | while read -r count pair; do
+        IFS='|' read -r from_lang to_lang <<< "$pair"
+        suggestions+=("$pair" "${LANGUAGE_CODES[$from_lang]} -> ${LANGUAGE_CODES[$to_lang]} ($count uses)")
+    done
+    echo "${suggestions[@]}"
+}
+
+# Function to show translation history
+show_history() {
+    if [[ ! -s "$HISTORY_FILE" ]]; then
+        dialog --msgbox "No translation history yet." 10 30
+        return
+    fi
+    local history_menu=()
+    while IFS='|' read -r from_lang to_lang text translated timestamp; do
+        history_menu+=("$timestamp" "$from_lang -> $to_lang: $text -> $translated")
+    done < "$HISTORY_FILE"
+    dialog --menu "Translation History" 20 80 15 "${history_menu[@]}" 2>/dev/null
+}
+
+# Function to translate from file with progress
+translate_file() {
+    local file=$(dialog --fselect "$HOME/" 14 50 2>&1 >/dev/tty)
+    [[ -z "$file" || ! -f "$file" ]] && { dialog --msgbox "Invalid or no file selected." 10 30; return; }
+    
+    local to_lang=$(dialog --menu "Select Target Language" 20 60 15 "${LANGUAGE_MENU[@]}" 2>&1 >/dev/tty)
+    [[ -z "$to_lang" ]] && return
+    
+    local total_lines=$(wc -l < "$file")
+    local current_line=0
+    local output_file="$HOME/translated_$(basename "$file")"
+    > "$output_file"
+    
+    while IFS= read -r line; do
+        ((current_line++))
+        [[ -n "$line" ]] || continue
+        translated=$(translate_text "auto" "$to_lang" "$line")
+        [[ -n "$translated" ]] && echo "$translated" >> "$output_file"
+        dialog --gauge "Translating file... ($current_line/$total_lines)" 10 50 $((current_line * 100 / total_lines))
+    done < "$file"
+    dialog --msgbox "Translation complete! Output saved to $output_file" 10 50
+}
+
+# Function to manage phrasebook
+manage_phrasebook() {
+    while true; do
+        local phrases=()
+        if [[ -s "$PHRASEBOOK_FILE" ]]; then
+            while IFS='|' read -r phrase; do
+                phrases+=("$phrase" "$phrase")
+            done < "$PHRASEBOOK_FILE"
+        fi
+        action=$(dialog --menu "Phrasebook" 15 50 8 \
+            "1" "Add Phrase" \
+            "2" "Translate Phrase" \
+            "3" "Back" "${phrases[@]}" 2>&1 >/dev/tty)
+        [[ -z "$action" ]] && return
+        
+        case "$action" in
+            1) new_phrase=$(dialog --inputbox "Enter phrase to add" 10 50 2>&1 >/dev/tty)
+               [[ -n "$new_phrase" ]] && echo "$new_phrase" >> "$PHRASEBOOK_FILE";;
+            2) [[ ${#phrases[@]} -eq 0 ]] && { dialog --msgbox "No phrases yet." 10 30; continue; }
+               phrase=$(dialog --menu "Select Phrase" 20 60 15 "${phrases[@]}" 2>&1 >/dev/tty)
+               [[ -z "$phrase" ]] && continue
+               to_lang=$(dialog --menu "Select Target Language" 20 60 15 "${LANGUAGE_MENU[@]}" 2>&1 >/dev/tty)
+               [[ -z "$to_lang" ]] && continue
+               translated=$(translate_text "auto" "$to_lang" "$phrase")
+               dialog --msgbox "Translation: $translated" 10 60;;
+            3) break;;
+            *) to_lang=$(dialog --menu "Select Target Language" 20 60 15 "${LANGUAGE_MENU[@]}" 2>&1 >/dev/tty)
+               [[ -z "$to_lang" ]] && continue
+               translated=$(translate_text "auto" "$to_lang" "$action")
+               dialog --msgbox "Translation: $translated" 10 60;;
+        esac
+    done
+}
+
+# Function to export/import data
+manage_data() {
+    action=$(dialog --menu "Manage Data" 15 50 5 \
+        "1" "Export Settings & Data" \
+        "2" "Import Settings & Data" \
+        "3" "Back" 2>&1 >/dev/tty)
+    [[ -z "$action" ]] && return
+    
+    case "$action" in
+        1) tar -czf "$HOME/translate_backup_$(date '+%Y%m%d').tar.gz" "$SETTINGS_FILE" "$HISTORY_FILE" "$FAVORITES_FILE" "$PHRASEBOOK_FILE" "$TRANSLATION_LOG"
+           dialog --msgbox "Exported to $HOME/translate_backup_$(date '+%Y%m%d').tar.gz" 10 50;;
+        2) file=$(dialog --fselect "$HOME/" 14 50 2>&1 >/dev/tty)
+           [[ -z "$file" || ! -f "$file" ]] && { dialog --msgbox "Invalid file." 10 30; return; }
+           tar -xzf "$file" -C "$HOME"
+           dialog --msgbox "Imported successfully!" 10 30;;
+        3) return;;
+    esac
+}
+
+# Function to show settings
+show_settings() {
+    while true; do
+        local clipboard_status=$([[ $AUTO_CLIPBOARD -eq 1 ]] && echo "ON" || echo "OFF")
+        local save_status=$([[ $AUTO_SAVE -eq 1 ]] && echo "ON" || echo "OFF")
+        local service_status=$(echo "$TRANSLATION_SERVICE" | tr '[:lower:]' '[:upper:]')
+        local preview_status=$([[ $LIVE_PREVIEW -eq 1 ]] && echo "ON" || echo "OFF")
+        action=$(dialog --menu "Settings" 15 50 6 \
+            "1" "Auto-copy to clipboard: $clipboard_status" \
+            "2" "Auto-save translations: $save_status" \
+            "3" "Translation service: $service_status" \
+            "4" "Live preview: $preview_status" \
+            "5" "Back" 2>&1 >/dev/tty)
+        [[ -z "$action" ]] && return
+        
+        case "$action" in
+            1) AUTO_CLIPBOARD=$((1 - AUTO_CLIPBOARD));;
+            2) AUTO_SAVE=$((1 - AUTO_SAVE));;
+            3) TRANSLATION_SERVICE=$([[ "$TRANSLATION_SERVICE" == "google" ]] && echo "libretranslate" || echo "google");;
+            4) LIVE_PREVIEW=$((1 - LIVE_PREVIEW));;
+            5) break;;
+        esac
+        echo "AUTO_CLIPBOARD=$AUTO_CLIPBOARD" > "$SETTINGS_FILE"
+        echo "AUTO_SAVE=$AUTO_SAVE" >> "$SETTINGS_FILE"
+        echo "TRANSLATION_SERVICE=$TRANSLATION_SERVICE" >> "$SETTINGS_FILE"
+        echo "LIVE_PREVIEW=$LIVE_PREVIEW" >> "$SETTINGS_FILE"
+    done
+}
+
+# Help menu
+show_help() {
+    dialog --msgbox "Translation Tool Help\n\n\
+- Navigate with arrow keys, Enter to select, Esc to cancel.\n\
+- Features:\n\
+  * Translate text (live preview option)\n\
+  * OCR from images (if tesseract installed)\n\
+  * Voice input (if sox installed)\n\
+  * Dictionary lookup\n\
+  * File translation with progress\n\
+  * Phrasebook, favorites, suggestions\n\
+  * Export/import data\n\
+  * Text-to-speech (if espeak installed)\n\
+  * Clipboard (if xclip installed)\n\
+- Files:\n\
+  * History: $HISTORY_FILE\n\
+  * Favorites: $FAVORITES_FILE\n\
+  * Phrasebook: $PHRASEBOOK_FILE\n\
+  * Log: $TRANSLATION_LOG" 20 60
+}
+
+# Main TUI function
 main() {
-    # Display language selection menu
-    display_language_menu
-
-    # Prompt for source language
-    read -rp "Enter the code of the source language: " source_lang_code
-    source_lang="${language_codes[$source_lang_code]}"
-    [[ -z "$source_lang" ]] && { echo "Invalid source language code. Exiting."; exit 1; }
-
-    # Prompt for target language
-    read -rp "Enter the code of the target language: " target_lang_code
-    target_lang="${language_codes[$target_lang_code]}"
-    [[ -z "$target_lang" ]] && { echo "Invalid target language code. Exiting."; exit 1; }
-
-    # Prompt for text to translate
-    read -rp "Enter the text to translate (press Ctrl+D when done): " input_text
-
-    # Perform translation
-    translated_text=$(translate_text "$source_lang_code" "$target_lang_code" "$input_text")
-
-    # Display translated text
-    echo -e "\nTranslated Text (from $source_lang to $target_lang):"
-    echo "$translated_text"
-
-    # Copy translated text to clipboard
-    copy_to_clipboard "$translated_text"
+    while true; do
+        action=$(dialog --menu "Translation Tool" 20 50 12 \
+            "1" "Translate Text" \
+            "2" "Translate File" \
+            "3" "Translate Image (OCR)" \
+            "4" "Voice Input" \
+            "5" "Dictionary Lookup" \
+            "6" "View History" \
+            "7" "Favorites" \
+            "8" "Phrasebook" \
+            "9" "Manage Data" \
+            "10" "Settings" \
+            "11" "Help" \
+            "12" "Exit" 2>&1 >/dev/tty)
+        [[ -z "$action" ]] && exit 0
+        
+        case "$action" in
+            1) # Translate Text
+                favs=($(load_favorites))
+                sugg=($(suggest_pairs))
+                source_lang_code=$(dialog --menu "Select Source Language" 20 60 15 "${LANGUAGE_MENU[@]}" "${favs[@]}" "${sugg[@]}" 2>&1 >/dev/tty)
+                [[ -z "$source_lang_code" ]] && continue
+                if [[ "$source_lang_code" =~ \| ]]; then
+                    IFS='|' read -r source_lang_code target_lang_code <<< "$source_lang_code"
+                else
+                    target_lang_code=$(dialog --menu "Select Target Language" 20 60 15 "${LANGUAGE_MENU[@]}" 2>&1 >/dev/tty)
+                    [[ -z "$target_lang_code" ]] && continue
+                fi
+                
+                tmp_file=$(mktemp)
+                if [[ $LIVE_PREVIEW -eq 1 ]]; then
+                    trap 'rm -f $tmp_file' EXIT
+                    echo "Type below (Ctrl+D to finish, preview updates every 2s):" > "$tmp_file"
+                    ( while true; do sleep 2; text=$(tail -n +2 "$tmp_file"); [[ -n "$text" ]] && translate_text "$source_lang_code" "$target_lang_code" "$text" > "$tmp_file.preview" || echo "Waiting..." > "$tmp_file.preview"; done ) &
+                    preview_pid=$!
+                    dialog --editbox "$tmp_file" 15 60 2>"$tmp_file.input"
+                    kill $preview_pid
+                    input_text=$(cat "$tmp_file.input")
+                    translated_text=$(cat "$tmp_file.preview" 2>/dev/null || translate_text "$source_lang_code" "$target_lang_code" "$input_text")
+                    rm "$tmp_file.preview" "$tmp_file.input"
+                else
+                    dialog --editbox /dev/null 15 60 2>"$tmp_file"
+                    input_text=$(cat "$tmp_file")
+                    translated_text=$(translate_text "$source_lang_code" "$target_lang_code" "$input_text")
+                fi
+                rm "$tmp_file"
+                [[ -z "$input_text" ]] && continue
+                
+                if [[ $? -ne 0 || -z "$translated_text" ]]; then
+                    dialog --msgbox "Translation failed. Check connection or try again." 10 40
+                    continue
+                fi
+                
+                dialog --title "Translation Result" \
+                       --yesno "From ${LANGUAGE_CODES[$source_lang_code]} to ${LANGUAGE_CODES[$target_lang_code]}:\n\n$translated_text\n\nOptions?" 15 60
+                response=$?
+                
+                if [[ $response -eq 0 ]]; then
+                    options=( "1" "Copy to clipboard" "2" "Speak" "3" "Save" "4" "Reverse" "5" "Add to favorites" "6" "Back" )
+                    [[ $CLIPBOARD_AVAILABLE -eq 0 ]] && options=( "${options[@]/1*/}" )
+                    [[ $SPEECH_AVAILABLE -eq 0 ]] && options=( "${options[@]/2*/}" )
+                    opt=$(dialog --menu "Select Action" 15 50 6 "${options[@]}" 2>&1 >/dev/tty)
+                    case "$opt" in
+                        1) copy_to_clipboard "$translated_text"; dialog --msgbox "Copied!" 10 30;;
+                        2) speak_text "$translated_text"; dialog --msgbox "Spoken!" 10 30;;
+                        3) save_translation "$input_text" "${LANGUAGE_CODES[$source_lang_code]}" "${LANGUAGE_CODES[$target_lang_code]}" "$translated_text";;
+                        4) reverse=$(translate_text "$target_lang_code" "$source_lang_code" "$translated_text")
+                           dialog --msgbox "Reverse: $reverse" 10 60;;
+                        5) add_to_favorites "$source_lang_code" "$target_lang_code";;
+                    esac
+                elif [[ $AUTO_CLIPBOARD -eq 1 ]]; then
+                    copy_to_clipboard "$translated_text"
+                fi
+                [[ $AUTO_SAVE -eq 1 ]] && save_translation "$input_text" "${LANGUAGE_CODES[$source_lang_code]}" "${LANGUAGE_CODES[$target_lang_code]}" "$translated_text"
+                ;;
+            2) translate_file ;;
+            3) # Translate Image (OCR)
+                [[ $OCR_AVAILABLE -eq 0 ]] && { dialog --msgbox "Tesseract not installed." 10 30; continue; }
+                file=$(dialog --fselect "$HOME/" 14 50 2>&1 >/dev/tty)
+                [[ -z "$file" || ! -f "$file" ]] && { dialog --msgbox "Invalid file." 10 30; continue; }
+                text=$(extract_text_from_image "$file")
+                [[ -z "$text" ]] && { dialog --msgbox "No text extracted." 10 30; continue; }
+                to_lang=$(dialog --menu "Select Target Language" 20 60 15 "${LANGUAGE_MENU[@]}" 2>&1 >/dev/tty)
+                translated=$(translate_text "auto" "$to_lang" "$text")
+                dialog --msgbox "Extracted: $text\nTranslated: $translated" 15 60;;
+            4) # Voice Input
+                [[ $VOICE_AVAILABLE -eq 0 ]] && { dialog --msgbox "SoX not installed." 10 30; continue; }
+                text=$(record_voice_input)
+                [[ -z "$text" ]] && { dialog --msgbox "No text recorded." 10 30; continue; }
+                to_lang=$(dialog --menu "Select Target Language" 20 60 15 "${LANGUAGE_MENU[@]}" 2>&1 >/dev/tty)
+                translated=$(translate_text "auto" "$to_lang" "$text")
+                dialog --msgbox "Heard: $text\nTranslated: $translated" 15 60;;
+            5) # Dictionary Lookup
+                word=$(dialog --inputbox "Enter word to lookup" 10 50 2>&1 >/dev/tty)
+                [[ -z "$word" ]] && continue
+                definition=$(dictionary_lookup "$word")
+                dialog --msgbox "Definition: $definition" 15 60;;
+            6) show_history ;;
+            7) load_favorites | dialog --menu "Favorites" 20 60 15;;
+            8) manage_phrasebook ;;
+            9) manage_data ;;
+            10) show_settings ;;
+            11) show_help ;;
+            12) dialog --msgbox "Goodbye!" 10 30; exit 0 ;;
+        esac
+    done
 }
 
-# Execute main function
-main
+# Trap to clean up on exit
+trap 'clear' EXIT
 
+# Run the main function
+main
