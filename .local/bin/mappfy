@@ -1,86 +1,229 @@
 #!/bin/bash
-# shellcheck disable=SC2199
-# shellcheck disable=SC2086
-# shellcheck source=/dev/null
-#
+# mappfy - Advanced .desktop file modifier
 # Copyright (C) 2024-02 pyranix <pyranix@proton.me>
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# Licensed under Apache License 2.0
 
-# Define the directory containing .desktop files
-desktop_dir="/usr/share/applications"
+# Configuration
+DESKTOP_DIR="/usr/share/applications"
+BACKUP_DIR="$HOME/.mappfy_backups"
+CONFIG_FILE="$HOME/.mappfyrc"
+VERSION="1.1.0"
+LOG_FILE="$HOME/.mappfy.log"
 
-# Use rofi to show the manual
-rofi -show information -e "This script allows you to add an additional command to the 'Exec' line in selected '.desktop' files within the specified directory.
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+NC='\033[0m'
 
-Options:
-1. dbus-launch
-2. dbus-run-session
-3. Write your custom command
-
-Usage:
-mappfy"
-
-# Get a list of all .desktop files in the specified directory
-desktop_files=("$desktop_dir"/*.desktop)
-
-# Check if there are any .desktop files
-if [ ${#desktop_files[@]} -eq 0 ]; then
-    echo "No .desktop files found in $desktop_dir. Exiting."
-    exit 1
-fi
-
-# Use rofi to get user input for the additional command
-selected_option=$(echo -e "dbus-launch\ndbus-run-session\nWrite your custom command" | rofi -dmenu -p "Select an additional cmd or write manual the cmd:")
-
-# Define the additional command based on the user's selection
-case "$selected_option" in
-    "dbus-launch")
-        additional_command="dbus-launch"
-        ;;
-    "dbus-run-session")
-        additional_command="dbus-run-session"
-        ;;
-    "Write your custom command")
-        read -p "Enter your custom command: " additional_command
-        ;;
-    *)
-        echo "Invalid option. Exiting."
-        exit 1
-        ;;
-esac
-
-# Use rofi to get user input for selecting applications
-selected_apps=$(printf "%s\n" "${desktop_files[@]##*/}" | rofi -dmenu -p "Select applications to modify:" -multi-select)
-
-# Check if the user selected any applications
-if [ -n "$selected_apps" ]; then
-    # Loop through selected applications and modify their Exec line
-    for selected_app in $selected_apps; do
-        desktop_file="$desktop_dir/$selected_app"
-        # Check if the file exists
-        if [ -e "$desktop_file" ]; then
-            # Check if Exec line exists, if not add it, otherwise insert the new command at the beginning
-            if grep -q "^Exec=" "$desktop_file"; then
-                sed -i "s|^Exec=|Exec=$additional_command |" "$desktop_file"
-            else
-                echo "Exec=$additional_command" >> "$desktop_file"
-            fi
-            dunstify "Additional command added to $desktop_file"
+# Check dependencies
+check_dependencies() {
+    local deps=("rofi" "dunstify" "sed" "grep" "find")
+    local missing=()
+    for dep in "${deps[@]}"; do
+        if ! command -v "$dep" &>/dev/null; then
+            missing+=("$dep")
         fi
     done
+    if [ ${#missing[@]} -gt 0 ]; then
+        echo -e "${RED}Error: Missing dependencies: ${missing[*]}${NC}"
+        exit 1
+    fi
+}
 
-    dunstify "Additional command added successfully."
-else
-    dunstify "No applications selected. Exiting."
-fi
+# Log messages
+log_message() {
+    local level="$1"
+    local message="$2"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [$level] $message" >> "$LOG_FILE"
+}
+
+# Load saved custom commands
+load_custom_commands() {
+    if [ -f "$CONFIG_FILE" ]; then
+        mapfile -t custom_commands < <(grep -v '^#' "$CONFIG_FILE")
+    fi
+}
+
+# Save custom command
+save_custom_command() {
+    local cmd="$1"
+    if ! grep -Fxq "$cmd" "$CONFIG_FILE" 2>/dev/null; then
+        echo "$cmd" >> "$CONFIG_FILE"
+    fi
+}
+
+# Show help/info
+show_info() {
+    rofi -show information -e "mappfy v$VERSION
+Advanced .desktop file modifier
+
+Commands:
+- dbus-launch: Launch via D-Bus
+- dbus-run-session: New D-Bus session
+- Custom command: User-defined
+- Saved commands: From ~/.mappfyrc
+
+Features:
+- Backup system
+- Undo functionality
+- Custom command persistence
+- Logging
+- Multi-directory support
+
+Usage: $0 [options]
+Options:
+  -h, --help     Show this help
+  -u, --undo     Undo last modification
+  -d DIR         Custom directory"
+}
+
+# Backup file
+backup_file() {
+    local file="$1"
+    mkdir -p "$BACKUP_DIR"
+    local backup="$BACKUP_DIR/$(basename "$file").$(date +%Y%m%d_%H%M%S)"
+    cp "$file" "$backup"
+    echo "$backup" > "$BACKUP_DIR/last_backup"
+    log_message "BACKUP" "Created backup: $backup"
+}
+
+# Undo last modification
+undo_last() {
+    if [ -f "$BACKUP_DIR/last_backup" ]; then
+        local last_backup=$(cat "$BACKUP_DIR/last_backup")
+        local original="${last_backup%%.*}"
+        if [ -f "$last_backup" ]; then
+            cp "$last_backup" "$original"
+            dunstify "Undo" "Restored $original"
+            log_message "UNDO" "Restored $original from $last_backup"
+            rm "$last_backup" "$BACKUP_DIR/last_backup"
+            return 0
+        fi
+    fi
+    dunstify -u critical "Undo Failed" "No backup available"
+    return 1
+}
+
+# Check root when needed
+check_root() {
+    if [ ! -w "$DESKTOP_DIR" ] && [ "$EUID" -ne 0 ]; then
+        echo -e "${YELLOW}Root privileges needed${NC}"
+        if command -v sudo &>/dev/null; then
+            exec sudo "$0" "$@"
+        else
+            exit 1
+        fi
+    fi
+}
+
+# Get desktop files from directory
+get_desktop_files() {
+    local dir="$1"
+    mapfile -t desktop_files < <(find "$dir" -name "*.desktop" -type f 2>/dev/null)
+}
+
+main() {
+    local custom_dir="$DESKTOP_DIR"
+    custom_commands=()
+
+    # Parse options
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help) show_info; exit 0 ;;
+            -u|--undo) undo_last; exit $? ;;
+            -d) custom_dir="$2"; shift ;;
+            *) echo -e "${RED}Unknown option: $1${NC}"; exit 1 ;;
+        esac
+        shift
+    done
+
+    check_dependencies
+    check_root
+    load_custom_commands
+    get_desktop_files "$custom_dir"
+
+    if [ ${#desktop_files[@]} -eq 0 ]; then
+        dunstify -u critical "Error" "No .desktop files in $custom_dir"
+        log_message "ERROR" "No desktop files found"
+        exit 1
+    fi
+
+    # Command selection
+    local options=("dbus-launch" "dbus-run-session" "Custom command")
+    if [ ${#custom_commands[@]} -gt 0 ]; then
+        options+=("${custom_commands[@]}")
+    fi
+    
+    local selected_cmd
+    selected_cmd=$(printf "%s\n" "${options[@]}" | rofi -dmenu -p "Select command:")
+
+    case "$selected_cmd" in
+        "dbus-launch"|"dbus-run-session")
+            additional_cmd="$selected_cmd"
+            ;;
+        "Custom command")
+            additional_cmd=$(rofi -dmenu -p "Enter command:" | tr -d '\n')
+            if [ -n "$additional_cmd" ]; then
+                save_custom_command "$additional_cmd"
+            else
+                dunstify -u critical "Error" "No command entered"
+                exit 1
+            fi
+            ;;
+        ""|*)
+            dunstify "Cancelled"
+            exit 0
+            ;;
+        *)  # Saved custom commands
+            additional_cmd="$selected_cmd"
+            ;;
+    esac
+
+    # Application selection with preview
+    local app_list=()
+    for file in "${desktop_files[@]}"; do
+        name=$(grep "^Name=" "$file" | head -1 | cut -d'=' -f2-)
+        app_list+=("${file##*/} (${name:-Unnamed})")
+    done
+
+    local selected_apps
+    selected_apps=$(printf "%s\n" "${app_list[@]}" | rofi -dmenu -p "Select apps:" -multi-select -i)
+
+    if [ -z "$selected_apps" ]; then
+        dunstify "No applications selected"
+        exit 0
+    fi
+
+    # Process modifications
+    local modified_count=0
+    while IFS= read -r app; do
+        if [ -n "$app" ]; then
+            local filename="${app%% (*}"
+            local file="$custom_dir/$filename"
+            if [ -w "$file" ]; then
+                backup_file "$file"
+                if grep -q "^Exec=" "$file"; then
+                    sed -i "s|^Exec=\(.*\)|Exec=$additional_cmd \1|" "$file"
+                else
+                    echo "Exec=$additional_cmd" >> "$file"
+                fi
+                ((modified_count++))
+                dunstify "Modified" "$filename"
+                log_message "MODIFY" "Added '$additional_cmd' to $file"
+            else
+                dunstify -u critical "Error" "Cannot modify $filename"
+                log_message "ERROR" "Permission denied: $file"
+            fi
+        fi
+    done <<< "$selected_apps"
+
+    dunstify "Success" "Modified $modified_count applications"
+    echo -e "${GREEN}Modified $modified_count applications${NC}"
+    log_message "SUCCESS" "Completed: $modified_count files modified"
+}
+
+# Error handling
+trap 'dunstify -u critical "Error" "Operation failed (see $LOG_FILE)"; log_message "ERROR" "Script failed: $?"; exit 1' ERR
+
+main "$@"
