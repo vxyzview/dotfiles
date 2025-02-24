@@ -1,102 +1,218 @@
 #!/bin/bash
-# shellcheck disable=SC2199
-# shellcheck disable=SC2086
-# shellcheck source=/dev/null
-#
+# Advanced theme and wallpaper switcher for Qtile
 # Copyright (C) 2024-02 pyranix <pyranix@proton.me>
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-set -e
+# Licensed under the Apache License, Version 2.0
 
-# Define the theme and wallpaper folder paths
-qtheme_dir="$HOME/.qtheme"
-wallpaper_dir="$HOME/.wallpaper"
+set -euo pipefail
 
-# Function to select a theme
-select_theme() {
-    theme_list=$(ls "$qtheme_dir")
-    selected_theme=$(echo "$theme_list" | rofi -dmenu -p "Select Theme:")
-    
-    if [ -n "$selected_theme" ]; then
-        apply_theme "$selected_theme"
+# Configuration
+readonly CONFIG_FILE="${HOME}/.qtheme_config"
+readonly QTHEME_DIR="${HOME}/.qtheme"
+readonly WALLPAPER_DIR="${HOME}/.wallpaper"
+readonly CONFIG_DIR="${HOME}/.config"
+readonly LOG_FILE="${HOME}/.qtheme.log"
+readonly DEFAULT_WALLPAPER="${WALLPAPER_DIR}/default.jpg"
+readonly BACKUP_DIR="${HOME}/.config_backups"
+readonly SUPPORTED_PROCESSES=("xsettingsd" "alacritty" "firefox" "dunst" "thunar" "ksuperkey")
+readonly SLIDESHOW_INTERVAL=300  # Default: 5 minutes
+
+# Theme definitions (GTK:Icon:Preview)
+declare -A THEMES=(
+    ["redrose"]="adw-gtk3-red:Tela-red:${WALLPAPER_DIR}/redrose_preview.jpg"
+    ["bluerod"]="adw-gtk3-blue:Tela-purple:${WALLPAPER_DIR}/bluerod_preview.jpg"
+    ["nyoom"]="adw-gtk3-dark:Tela-black:${WALLPAPER_DIR}/nyoom_preview.jpg"
+)
+
+# Utility functions
+log() { printf "%s: %s\n" "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >> "$LOG_FILE"; }
+log_error() { log "ERROR: $1"; printf "Error: %s\n" "$1" >&2; notify "Error" "$1"; exit 1; }
+check_dependency() { command -v "$1" >/dev/null 2>&1 || log_error "$1 not found."; }
+notify() { command -v notify-send >/dev/null 2>&1 && notify-send "$1" "$2" || true; }
+
+# Load config file
+load_config() {
+    [[ -f "$CONFIG_FILE" ]] && source "$CONFIG_FILE" && log "Loaded config from $CONFIG_FILE"
+}
+
+# Check dependencies
+for dep in rofi feh gsettings qtile xdg-user-dirs-update; do
+    check_dependency "$dep"
+done
+
+# Select item with rofi
+select_item() {
+    local prompt="$1" items="$2" preview="$3"
+    if [[ "$preview" == "true" && -n "$(check_dependency rofi 2>/dev/null)" ]]; then
+        echo "$items" | rofi -dmenu -p "$prompt" -i -no-custom -show-icons -theme-str 'window {width: 50%;}' 2>/dev/null
     else
-        echo "No theme selected. Exiting..."
-        exit 1
+        echo "$items" | rofi -dmenu -p "$prompt" -i -no-custom 2>/dev/null
     fi
 }
 
-# Function to apply the selected theme
+# List directory contents
+list_dir() {
+    local dir="$1" type="$2"
+    [[ -d "$dir" ]] || log_error "Directory '$dir' not found."
+    find "$dir" -maxdepth 1 -type "$type" -not -path "$dir" -exec basename {} \; | sort
+}
+
+# Backup existing config
+backup_config() {
+    local backup="${BACKUP_DIR}/config_$(date '+%Y%m%d_%H%M%S')"
+    mkdir -p "$BACKUP_DIR"
+    [[ -d "$CONFIG_DIR" ]] || return
+    cp -r "$CONFIG_DIR" "$backup" && log "Backed up config to $backup"
+    echo "$backup"
+}
+
+# Rollback to previous backup
+rollback() {
+    local backup="$1"
+    [[ -d "$backup" ]] || log_error "Backup '$backup' not found."
+    rm -rf "$CONFIG_DIR" && cp -r "$backup" "$CONFIG_DIR" || log_error "Rollback failed."
+    log "Rolled back to $backup"
+    notify "Rollback" "Restored configuration from $backup."
+}
+
+# Apply theme
 apply_theme() {
-    local selected_theme="$1"
-    src_path="$qtheme_dir/$selected_theme"
-    dest_path="$HOME/.config/"
-    
-    # Check if the theme directory exists
-    if [ ! -d "$src_path" ]; then
-        echo "Error: Theme directory '$src_path' not found."
-        exit 1
+    local theme="$1" dry_run="$2" backup=""
+    local src="${QTHEME_DIR}/${theme}"
+    [[ -d "$src" ]] || log_error "Theme directory '$src' not found."
+
+    if [[ "$dry_run" == "false" ]]; then
+        backup=$(backup_config)
+        cp -r "${src}/"* "$CONFIG_DIR" || { rollback "$backup"; log_error "Failed to copy theme files."; }
     fi
 
-    # Copy the selected theme to the destination
-    cp -r "$src_path/"* "$dest_path"
+    local gtk_theme icon_theme
+    IFS=':' read -r gtk_theme icon_theme _ <<< "${THEMES[$theme]}"
+    [[ "$dry_run" == "false" ]] && {
+        gsettings set org.gnome.desktop.interface gtk-theme "$gtk_theme" || log_error "Failed to set GTK theme."
+        gsettings set org.gnome.desktop.interface icon-theme "$icon_theme" || log_error "Failed to set icon theme."
+    }
 
-    # Update the icon theme based on the selected theme
-    case $selected_theme in
-        "redrose")
-            gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3-red"
-            gsettings set org.gnome.desktop.interface icon-theme "Tela-red"
-            ;;
-        "bluerod")
-            gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3-blue"
-            gsettings set org.gnome.desktop.interface icon-theme "Tela-purple"
-            ;;
-        "nyoom")
-            gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3-dark"
-            gsettings set org.gnome.desktop.interface icon-theme "Tela-black"
-            ;;
-    esac
-
-    select_wallpaper
+    log "Applied theme: $theme (Dry run: $dry_run)"
+    echo "Applied theme: $theme (Dry run: $dry_run)"
 }
 
-# Function to select a wallpaper
-select_wallpaper() {
-    wallpaper_list=$(ls "$wallpaper_dir")
-    selected_wallpaper=$(echo "$wallpaper_list" | rofi -dmenu -p "Select Wallpaper:")
+# Set wallpaper or start slideshow
+set_wallpaper() {
+    local wallpaper="$1" slideshow="$2" dry_run="$3"
+    local path="${WALLPAPER_DIR}/${wallpaper}"
 
-    if [ -n "$selected_wallpaper" ]; then
-        # Set the selected wallpaper
-        feh --bg-fill "$wallpaper_dir/$selected_wallpaper"
-        echo "Wallpaper '$selected_wallpaper' set successfully!"
+    if [[ "$slideshow" == "true" && "$dry_run" == "false" ]]; then
+        local wallpapers
+        wallpapers=$(list_dir "$WALLPAPER_DIR" "f") || log_error "No wallpapers for slideshow."
+        while true; do
+            for wp in $wallpapers; do
+                feh --bg-fill "${WALLPAPER_DIR}/${wp}" && log "Slideshow: Set $wp"
+                sleep "$SLIDESHOW_INTERVAL"
+            done
+        done & disown
+        log "Started wallpaper slideshow (interval: ${SLIDESHOW_INTERVAL}s)"
+        echo "Started wallpaper slideshow."
+    elif [[ -f "$path" ]]; then
+        [[ "$dry_run" == "false" ]] && feh --bg-fill "$path" || log_error "Failed to set wallpaper."
+        log "Wallpaper set: $wallpaper (Dry run: $dry_run)"
+        echo "Wallpaper set: $wallpaper (Dry run: $dry_run)"
+    elif [[ -z "$wallpaper" && -f "$DEFAULT_WALLPAPER" && "$dry_run" == "false" ]]; then
+        feh --bg-fill "$DEFAULT_WALLPAPER" || log_error "Failed to set default wallpaper."
+        log "Applied default wallpaper (Dry run: $dry_run)"
+        echo "Applied default wallpaper."
     else
-        echo "No wallpaper selected. Using the default wallpaper."
+        log "No valid wallpaper selected or default found (Dry run: $dry_run)"
+        echo "No wallpaper change applied."
     fi
-
-    # Update user directories
-    xdg-user-dirs-update
-    xdg-user-dirs-gtk-update
-
-    # Display user directories
-    xdg-user-dir
-
-    # Restart Qtile to apply the changes
-    qtile cmd-obj -f restart
-
-    # Kill already running processes
-    for process in xsettingsd alacritty firefox dunst thunar ksuperkey; do
-        pidof "$process" && killall "$process"
-    done
 }
 
-# Start the script by selecting a theme
-select_theme
+# Refresh desktop environment
+refresh_desktop() {
+    local dry_run="$1"
+    [[ "$dry_run" == "true" ]] && return
+
+    xdg-user-dirs-update >/dev/null 2>&1
+    xdg-user-dirs-gtk-update >/dev/null 2>&1
+    qtile cmd-obj -f restart >/dev/null 2>&1 || log_error "Failed to restart Qtile."
+
+    for process in "${SUPPORTED_PROCESSES[@]}"; do
+        killall "$process" 2>/dev/null || true
+    done
+
+    log "Desktop environment refreshed."
+    notify "Success" "Desktop environment refreshed."
+}
+
+# Show current settings
+show_current() {
+    local gtk_theme icon_theme
+    gtk_theme=$(gsettings get org.gnome.desktop.interface gtk-theme)
+    icon_theme=$(gsettings get org.gnome.desktop.interface icon-theme)
+    echo "Current GTK Theme: $gtk_theme"
+    echo "Current Icon Theme: $icon_theme"
+    log "Displayed current settings: GTK=$gtk_theme, Icons=$icon_theme"
+}
+
+# Main logic
+main() {
+    load_config
+
+    local theme="" wallpaper="" show_only=false slideshow=false dry_run=false rollback_to=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -t|--theme) theme="$2"; shift 2 ;;
+            -w|--wallpaper) wallpaper="$2"; shift 2 ;;
+            -s|--show) show_only=true; shift ;;
+            -l|--slideshow) slideshow=true; shift ;;
+            -d|--dry-run) dry_run=true; shift ;;
+            -r|--rollback) rollback_to="$2"; shift 2 ;;
+            -h|--help)
+                echo "Usage: $0 [options]"
+                echo "  -t, --theme      Specify theme"
+                echo "  -w, --wallpaper  Specify wallpaper"
+                echo "  -s, --show       Show current settings"
+                echo "  -l, --slideshow  Start wallpaper slideshow"
+                echo "  -d, --dry-run    Simulate actions without changes"
+                echo "  -r, --rollback   Rollback to a backup directory"
+                echo "  -h, --help       Show this help"
+                exit 0 ;;
+            *) log_error "Unknown option: $1" ;;
+        esac
+    done
+
+    if [[ -n "$rollback_to" ]]; then
+        rollback "$rollback_to"
+        refresh_desktop "$dry_run"
+        exit 0
+    fi
+
+    $show_only && { show_current; exit 0; }
+
+    # Interactive mode if no theme specified
+    if [[ -z "$theme" ]]; then
+        local theme_list
+        theme_list=$(list_dir "$QTHEME_DIR" "d") || exit 1
+        [[ -z "$theme_list" ]] && log_error "No themes found in $QTHEME_DIR."
+        theme=$(select_item "Select Theme" "$theme_list" "true") || exit 0
+        [[ -z "$theme" ]] && log_error "No theme selected."
+    fi
+
+    apply_theme "$theme" "$dry_run"
+
+    # Interactive wallpaper selection if not specified
+    if [[ -z "$wallpaper" && "$slideshow" == "false" ]]; then
+        local wallpaper_list
+        wallpaper_list=$(list_dir "$WALLPAPER_DIR" "f") || exit 1
+        [[ -z "$wallpaper_list" ]] && log_error "No wallpapers found in $WALLPAPER_DIR."
+        wallpaper=$(select_item "Select Wallpaper" "$wallpaper_list" "false") || exit 0
+    fi
+
+    set_wallpaper "$wallpaper" "$slideshow" "$dry_run"
+    refresh_desktop "$dry_run"
+
+    log "Theme and wallpaper applied successfully (Dry run: $dry_run)."
+    notify "Success" "Theme and wallpaper applied successfully!"
+}
+
+# Execute
+main "$@"
