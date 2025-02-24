@@ -1,98 +1,242 @@
 #!/bin/bash
 
-# Function to show menu and get user choice for quality, FPS, and audio
-function show_menu {
-    # Use rofi for menu selection and store choices in variables
-    quality=$(echo -e "High\nMedium\nLow" | rofi -dmenu -p "Select quality:")
-    case $quality in
-        High)
-            preset="ultrafast"
-            crf=18  # Lower CRF for higher video quality
-            ;;
-        Medium)
-            preset="medium"
-            crf=23
-            ;;
-        Low)
-            preset="veryslow"
-            crf=28  # Higher CRF for lower video quality
-            ;;
-        *)
-            dunstify "Error" "Invalid quality choice. Exiting." --urgency=critical
+# Constants
+readonly DEFAULT_OUTPUT_DIR="$HOME/Videos"
+readonly LOG_FILE="$HOME/.screenrecord.log"
+readonly CONFIG_FILE="$HOME/.screenrecordrc"
+readonly DEFAULT_DISPLAY=":0"
+readonly PREVIEW_DURATION=5
+
+# Global variables
+declare -A config
+pid=""
+recording_paused=false
+
+# Check dependencies
+check_dependencies() {
+    local deps=(ffmpeg rofi dunstify xdpyinfo slop xz xdotool xrandr)
+    for dep in "${deps[@]}"; do
+        if ! command -v "$dep" &>/dev/null; then
+            notify_critical "Error" "$dep is not installed. Please install it."
             exit 1
-            ;;
+        fi
+    done
+}
+
+# Notification wrappers
+notify_low() { dunstify "$1" "$2" --urgency=low; }
+notify_normal() { dunstify "$1" "$2" --urgency=normal; }
+notify_critical() { dunstify "$1" "$2" --urgency=critical; }
+notify_with_actions() { dunstify "$1" "$2" --action="stop,Stop" --action="pause,Pause/Resume" --urgency=normal; }
+
+# Log errors
+log_error() { echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOG_FILE"; }
+
+# Load config
+load_config() {
+    [[ -f "$CONFIG_FILE" ]] && source "$CONFIG_FILE"
+    config[quality]="${config[quality]:-Medium}"
+    config[fps]="${config[fps]:-60}"
+    config[audio]="${config[audio]:-No}"
+    config[format]="${config[format]:-MKV}"
+    config[region]="${config[region]:-Full Screen}"
+    config[output_dir]="${config[output_dir]:-$DEFAULT_OUTPUT_DIR}"
+    config[compress]="${config[compress]:-No}"
+    config[preview]="${config[preview]:-No}"
+}
+
+# Save config
+save_config() {
+    cat > "$CONFIG_FILE" <<EOF
+config[quality]="$quality"
+config[fps]="$fps"
+config[audio]="$audio"
+config[format]="$format"
+config[region]="$region"
+config[output_dir]="$output_dir"
+config[compress]="$compress"
+config[preview]="$preview"
+EOF
+}
+
+# Get user choices
+get_user_choices() {
+    load_config
+    local use_defaults=$(printf "Yes\nNo" | rofi -dmenu -p "Use saved defaults?")
+    [[ "$use_defaults" == "Yes" ]] && return
+
+    quality=$(printf "High\nMedium\nLow" | rofi -dmenu -p "Select quality:" -selected-row "$( (($quality == 'High') ? 0 : ($quality == 'Medium') ? 1 : 2))")
+    [[ -z "$quality" ]] && { notify_critical "Error" "No quality selected."; exit 1; }
+    case "$quality" in
+        High)   preset="veryfast"; crf=18 ;;
+        Medium) preset="medium";   crf=23 ;;
+        Low)    preset="slower";   crf=28 ;;
+        *)      notify_critical "Error" "Invalid quality."; exit 1 ;;
     esac
 
-    fps=$(echo -e "60\n90\n120\n144\n240" | rofi -dmenu -p "Select FPS:")
-    case $fps in
-        60|90|120|144|240)
-            ;;
-        *)
-            dunstify "Error" "Invalid FPS choice. Exiting." --urgency=critical
-            exit 1
-            ;;
+    fps=$(printf "30\n60\n90\n120\n144\n240" | rofi -dmenu -p "Select FPS:" -selected-row "$( (($fps == 30) ? 0 : ($fps == 60) ? 1 : ($fps == 90) ? 2 : ($fps == 120) ? 3 : ($fps == 144) ? 4 : 5))")
+    [[ -z "$fps" ]] && { notify_critical "Error" "No FPS selected."; exit 1; }
+    case "$fps" in 30|60|90|120|144|240) ;; *) notify_critical "Error" "Invalid FPS."; exit 1 ;; esac
+
+    audio=$(printf "Yes\nNo" | rofi -dmenu -p "Include audio?" -selected-row "$( (($audio == 'Yes') ? 0 : 1))")
+    case "$audio" in
+        Yes) audio_opt="-f pulse -i default"; audio_suffix="_audio" ;;
+        No)  audio_opt="";                    audio_suffix="" ;;
+        *)   notify_critical "Error" "Invalid audio choice."; exit 1 ;;
     esac
 
-    include_audio=$(echo -e "Yes\nNo" | rofi -dmenu -p "Include audio?")
-    case $include_audio in
-        Yes)
-            audio="-f pulse -i default"
+    format=$(printf "MKV\nMP4" | rofi -dmenu -p "Select format:" -selected-row "$( (($format == 'MKV') ? 0 : 1))")
+    case "$format" in
+        MKV) ext="mkv"; audio_codec="flac" ;;
+        MP4) ext="mp4"; audio_codec="aac" ;;
+        *)   notify_critical "Error" "Invalid format."; exit 1 ;;
+    esac
+
+    region=$(printf "Full Screen\nCustom Region\nMonitor" | rofi -dmenu -p "Record area:" -selected-row "$( (($region == 'Full Screen') ? 0 : ($region == 'Custom Region') ? 1 : 2))")
+    case "$region" in
+        "Full Screen") video_size=$(xdpyinfo | awk '/dimensions/ {print $2}'); offset="0,0" ;;
+        "Custom Region")
+            read -r width height x y < <(slop -f "%w %h %x %y")
+            [[ -z "$width" || "$width" -eq 0 ]] && { notify_critical "Error" "Invalid region."; exit 1; }
+            video_size="${width}x${height}"
+            offset="$x,$y"
             ;;
-        No)
-            audio=""
+        "Monitor")
+            monitors=$(xrandr --listmonitors | grep -v "Monitors:" | awk '{print $4}')
+            monitor=$(printf "%s\n" "$monitors" | rofi -dmenu -p "Select monitor:")
+            [[ -z "$monitor" ]] && { notify_critical "Error" "No monitor selected."; exit 1; }
+            read -r x y width height < <(xrandr --current | grep "$monitor" | awk '{print $3}' | tr '+x' ' ')
+            video_size="${width}x${height}"
+            offset="$x,$y"
             ;;
-        *)
-            dunstify "Error" "Invalid audio choice. Exiting." --urgency=critical
-            exit 1
+        *) notify_critical "Error" "Invalid region."; exit 1 ;;
+    esac
+
+    output_dir=$(printf "%s\nCustom" "$DEFAULT_OUTPUT_DIR" | rofi -dmenu -p "Output directory:")
+    [[ "$output_dir" == "Custom" ]] && output_dir=$(rofi -dmenu -p "Enter custom path:" -lines 1)
+    [[ -z "$output_dir" ]] && { notify_critical "Error" "No directory selected."; exit 1; }
+
+    compress=$(printf "No\nYes (xz)" | rofi -dmenu -p "Compress output?" -selected-row "$( (($compress == 'No') ? 0 : 1))")
+    case "$compress" in "Yes (xz)") compress_opt="xz" ;; "No") compress_opt="" ;; *) notify_critical "Error" "Invalid compression."; exit 1 ;; esac
+
+    preview=$(printf "No\nYes" | rofi -dmenu -p "Generate preview?" -selected-row "$( (($preview == 'No') ? 0 : 1))")
+    save_config
+}
+
+# Generate filename
+generate_filename() {
+    local datetime=$(date '+%Y.%m.%d_%H:%M:%S')
+    local suffix="${fps}fps_${quality}${audio_suffix}"
+    [[ "$region" != "Full Screen" ]] && suffix="${suffix}_${video_size}"
+    printf "%s/Screenrecord_%s_%s.%s" "$output_dir" "$datetime" "$suffix" "$ext"
+}
+
+# Record preview
+record_preview() {
+    local preview_file="${output_dir}/preview_${RANDOM}.$ext"
+    notify_low "Recording preview" "Duration: ${PREVIEW_DURATION}s"
+    : "${DISPLAY:=$DEFAULT_DISPLAY}"
+    ffmpeg -probesize 50M -thread_queue_size 1024 \
+           -f x11grab -video_size "$video_size" -framerate "$fps" -i "$DISPLAY+$offset" \
+           $audio_opt -c:v libx264 -preset "$preset" -crf "$crf" -pix_fmt yuv420p \
+           ${audio_opt:+-c:a "$audio_codec" -af "aresample=async=1:min_hard_comp=0.100000:first_pts=0"} \
+           -t "$PREVIEW_DURATION" -y "$preview_file" &>/dev/null
+    [ $? -eq 0 ] && notify_normal "Preview ready" "Saved as $preview_file" || { log_error "Preview failed"; notify_critical "Preview failed" "Check $LOG_FILE."; rm -f "$preview_file"; }
+}
+
+# Post-processing
+post_process() {
+    local file="$1"
+    local action=$(printf "None\nTrim\nConvert" | rofi -dmenu -p "Post-process recording?")
+    case "$action" in
+        "Trim")
+            local duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$file")
+            local start=$(rofi -dmenu -p "Start time (s):" -lines 1)
+            local end=$(rofi -dmenu -p "End time (s):" -lines 1)
+            [[ -z "$start" || -z "$end" ]] && { notify_critical "Error" "Invalid trim times."; return; }
+            local output="${file%.*}_trimmed.$ext"
+            ffmpeg -i "$file" -ss "$start" -t "$(bc <<< "$end - $start")" -c copy "$output" &>/dev/null
+            [ $? -eq 0 ] && notify_normal "Trim complete" "Saved as $output" || notify_critical "Trim failed" ""
+            ;;
+        "Convert")
+            local new_format=$(printf "MKV\nMP4" | rofi -dmenu -p "Convert to:")
+            local new_ext="${new_format,,}"
+            local output="${file%.*}_converted.$new_ext"
+            ffmpeg -i "$file" -c:v copy -c:a copy "$output" &>/dev/null
+            [ $? -eq 0 ] && notify_normal "Conversion complete" "Saved as $output" || notify_critical "Conversion failed" ""
             ;;
     esac
 }
 
-# Function to start screen recording
-function start_recording {
-    show_menu
+# Start recording
+start_recording() {
+    get_user_choices
+    mkdir -p "$output_dir" || { notify_critical "Error" "Failed to create $output_dir."; exit 1; }
 
-    # Define output directory
-    output_dir="$HOME/Videos"
+    [[ "$preview" == "Yes" ]] && { record_preview; [[ $(printf "Yes\nNo" | rofi -dmenu -p "Continue?") != "Yes" ]] && exit 0; }
 
-    # Create output directory if it does not exist
-    mkdir -p "$output_dir"
+    local output_file=$(generate_filename)
+    notify_low "Starting recording" "Quality: $quality, FPS: $fps, Audio: $audio"
 
-    # Generate output file name with date and time (using dots for date and colons for time)
-    datetime=$(date '+%Y.%m.%d_%H:%M:%S')
+    : "${DISPLAY:=$DEFAULT_DISPLAY}"
+    ffmpeg -probesize 50M -thread_queue_size 1024 \
+           -f x11grab -video_size "$video_size" -framerate "$fps" -i "$DISPLAY+$offset" \
+           $audio_opt -c:v libx264 -preset "$preset" -crf "$crf" -pix_fmt yuv420p \
+           ${audio_opt:+-c:a "$audio_codec" -af "aresample=async=1:min_hard_comp=0.100000:first_pts=0"} \
+           -avoid_negative_ts make_zero -fflags +genpts \
+           "$output_file" &>/dev/null & pid=$!
 
-    resolution=$(xdpyinfo | awk '/dimensions/ {print $2}')
-    fps_suffix="${fps}fps"
-    audio_suffix=$(echo "$include_audio" | tr '[:upper:]' '[:lower:]')
-    audio_suffix="${audio_suffix}_audio"
+    local start_time=$(date +%s)
+    local action
+    while kill -0 "$pid" 2>/dev/null; do
+        local duration=$(( $(date +%s) - start_time ))
+        local size=$(stat -c %s "$output_file" 2>/dev/null || echo 0)
+        local bitrate=$(bc <<< "scale=2; ($size * 8) / ($duration * 1000)" 2>/dev/null || echo "N/A")
+        action=$(notify_with_actions "Recording" "File: $output_file\nDuration: ${duration}s\nSize: $((size / 1024 / 1024))MB\nBitrate: ${bitrate}kbps")
+        case "$action" in
+            "stop") kill "$pid"; break ;;
+            "pause")
+                if $recording_paused; then
+                    kill -CONT "$pid"
+                    recording_paused=false
+                else
+                    kill -STOP "$pid"
+                    recording_paused=true
+                fi
+                ;;
+        esac
+        sleep 1
+    done
 
-    # Construct descriptive file name with chosen separators
-    output_file="$output_dir/Screenrecord_${datetime}_${resolution}_${fps_suffix}_${quality}_${audio_suffix}.mkv"
-
-    # Log the recording settings as a notification using dunstify
-    dunstify "Starting screen recording" \
-             "Quality: $quality, FPS: $fps, Audio: $include_audio" \
-             --urgency=low
-
-    # Start recording using ffmpeg with adjusted parameters
-    ffmpeg -probesize 50M -thread_queue_size 1024 -f x11grab -video_size "$resolution" \
-           -framerate $fps -i $DISPLAY $audio \
-           -c:v libx264 -preset $preset -crf $crf -pix_fmt yuv420p \
-           -c:a flac -compression_level 8 \
-           -af "aresample=async=1:min_hard_comp=0.100000:first_pts=0" \
-           -avoid_negative_ts make_zero \
-           -fflags +genpts \
-           "$output_file"
-
-    # Check if ffmpeg command was successful
+    wait "$pid" 2>/dev/null
     if [ $? -eq 0 ]; then
-        dunstify "Screen recording complete" "File saved: $output_file" --urgency=normal
+        [[ -n "$compress_opt" ]] && { "$compress_opt" "$output_file" && output_file="$output_file.$compress_opt"; }
+        notify_normal "Recording complete" "File: $output_file"
+        post_process "$output_file"
     else
-        dunstify "Recording stopped" "An error occurred during recording." --urgency=critical
+        log_error "ffmpeg failed for $output_file"
+        notify_critical "Recording failed" "Check $LOG_FILE."
     fi
 }
 
-# Main script
-start_recording
+# Hotkey setup (example: Ctrl+Alt+R to toggle)
+setup_hotkey() {
+    if ! pgrep -f "xdotool key ctrl+alt+r" &>/dev/null; then
+        notify_low "Hotkey setup" "Press Ctrl+Alt+R to start/stop recording."
+        while true; do
+            xdotool keydown ctrl keydown alt key r keyup r keyup alt keyup ctrl
+            if [[ -z "$pid" ]]; then
+                start_recording &
+            elif kill -0 "$pid" 2>/dev/null; then
+                kill "$pid"
+            fi
+            sleep 0.1
+        done & disown
+    fi
+}
 
+# Main execution
+check_dependencies
+setup_hotkey
+start_recording
 exit 0
