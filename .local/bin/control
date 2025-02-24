@@ -3,107 +3,216 @@
 # Copyright (C) 2024-02 pyranix <pyranix@proton.me>
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# see http://www.apache.org/licenses/LICENSE-2.0 for details.
 
-# Constants
-NOTIFY_ID=424242
-STACK_TAG=progress
-ICON_PATH_VOLUME="$HOME/.notify/images/music.png"
-ICON_PATH_MUTE="$HOME/.notify/images/mute.png"
-ICON_PATH_UNMUTE="$HOME/.notify/images/music.png"
-ICON_PATH_BRIGHTNESS="$HOME/.notify/images/smart-bulb.png"
+# Default constants
+readonly NOTIFY_ID=424242
+readonly STACK_TAG="progress"
+readonly CONFIG_FILE="$HOME/.config/notifyctl.conf"
+readonly LOG_FILE="$HOME/.notifyctl.log"
+readonly DEFAULT_ICON_DIR="$HOME/.notify/images"
+readonly DEFAULT_STEP=5
+readonly DEFAULT_MAX=100
 
-# Function to show notification using dunst with progress bar
+# Default icons
+declare -A ICONS=(
+    ["volume"]="$DEFAULT_ICON_DIR/music.png"
+    ["mute"]="$DEFAULT_ICON_DIR/mute.png"
+    ["unmute"]="$DEFAULT_ICON_DIR/music.png"
+    ["brightness"]="$DEFAULT_ICON_DIR/smart-bulb.png"
+)
+
+# Load configuration file if it exists
+load_config() {
+    if [[ -f "$CONFIG_FILE" ]]; then
+        while IFS='=' read -r key value; do
+            [[ -z "$key" || "$key" =~ ^# ]] && continue
+            key=$(echo "$key" | tr -d '[:space:]')
+            value=$(echo "$value" | tr -d '[:space:]')
+            case "$key" in
+                STEP) STEP="$value" ;;
+                MAX)  MAX="$value" ;;
+                ICON_*) ICONS["${key#ICON_}"]="$value" ;;
+            esac
+        done < "$CONFIG_FILE"
+    fi
+    STEP=${STEP:-$DEFAULT_STEP}
+    MAX=${MAX:-$DEFAULT_MAX}
+}
+
+# Log actions
+log_action() {
+    local message="$1"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $message" >> "$LOG_FILE"
+}
+
+# Check dependencies
+check_deps() {
+    local deps=("brightnessctl" "pactl" "dunstify")
+    for dep in "${deps[@]}"; do
+        command -v "$dep" >/dev/null 2>&1 || { echo "Error: $dep is required."; exit 1; }
+    done
+}
+
+# Show notification
 show_notification() {
-    local title="$1"
-    local message="$2"
-    local current_level=""
-    local icon_path=""
-
-    case "$title" in
-        "Brightness")
-            current_level=$(get_brightness)
-            icon_path="$ICON_PATH_BRIGHTNESS"
-            ;;
-        *)
-            current_level=$(get_volume)
-            icon_path="$ICON_PATH_VOLUME"
-            ;;
-    esac
-
-    dunstify -u low -i "$icon_path" -r "$NOTIFY_ID" -h int:value:"$current_level" -h string:x-dunst-stacktag:"$STACK_TAG" "$title" "$message Current: $current_level"
+    local title="$1" message="$2" value="$3" icon_key="$4"
+    local icon="${ICONS[$icon_key]}"
+    [[ ! -f "$icon" ]] && icon=""
+    [[ -z "$value" ]] && value=0
+    dunstify -u low -i "$icon" -r "$NOTIFY_ID" -h "int:value:$value" \
+             -h "string:x-dunst-stack-tag:$STACK_TAG" "$title" "$message"
 }
 
-# Function to get current brightness as a percentage of maximum brightness
+# Get current levels
 get_brightness() {
-    local current_brightness=$(brightnessctl g)
-    local max_brightness=$(brightnessctl m)
-    
-    # Calculate the brightness percentage
-    local brightness_percentage=$(( (current_brightness * 100) / max_brightness ))
-
-    echo "$brightness_percentage"
+    local cur=$(brightnessctl g 2>/dev/null) max=$(brightnessctl m 2>/dev/null)
+    [[ -z "$cur" || -z "$max" ]] && { echo "Error: Failed to get brightness."; exit 1; }
+    echo $(( (cur * 100) / max ))
 }
 
-# Function to get current volume
 get_volume() {
-    pactl list sinks | awk '/Volume:/{print $5; exit}'
+    local vol=$(pactl list sinks | awk '/Volume:/{print $5; exit}' | tr -d '%')
+    [[ -z "$vol" ]] && { echo "Error: Failed to get volume."; exit 1; }
+    echo "$vol"
 }
 
-# Function to change screen brightness
+# Validate and normalize value
+normalize_value() {
+    local value="$1" current="$2"
+    [[ "$value" =~ ^[-+]?[0-9]+%?$ ]] || { echo "Error: Invalid value: $value"; exit 1; }
+    value="${value%\%}"
+    local result
+    case "$value" in
+        +*) result=$((current + ${value#+})) ;;
+        -*) result=$((current - ${value#-})) ;;
+        *)  result="$value" ;;
+    esac
+    [[ "$result" -lt 0 ]] && result=0
+    [[ "$result" -gt "$MAX" ]] && result="$MAX"
+    echo "$result"
+}
+
+# Change brightness
 change_brightness() {
-    brightnessctl s "$1" && show_notification "Brightness" "Now"
-}
-
-# Function to change volume
-change_volume() {
-    pactl set-sink-volume @DEFAULT_SINK@ "$1%" && show_notification "Volume" "Now"
-}
-
-# Function to toggle mute/unmute volume
-toggle_mute() {
-    pactl set-sink-mute @DEFAULT_SINK@ toggle
-    local is_muted=$(pactl list sinks | awk '/Mute/{print $2; exit}')
-
-    if [ "$is_muted" = "yes" ]; then
-        show_notification "Control" "Muted" "$ICON_PATH_MUTE"
+    local value="$1" dry_run="$2"
+    local current=$(get_brightness)
+    value=$(normalize_value "$value" "$current")
+    if [[ "$dry_run" == "true" ]]; then
+        log_action "Dry-run: Would set brightness to $value%"
+        show_notification "Brightness (Dry)" "Would be: ${value}%" "$value" "brightness"
     else
-        show_notification "Control" "Unmuted" "$ICON_PATH_UNMUTE"
+        brightnessctl s "$value%" >/dev/null 2>&1 || { echo "Error: Brightness adjustment failed."; exit 1; }
+        log_action "Set brightness to $value%"
+        show_notification "Brightness" "Current: ${value}%" "$value" "brightness"
     fi
 }
 
-# Main script
-case "$#" in
-    2)
-        case "$1" in
-            brightness)
-                change_brightness "$2"
-                ;;
-            volume)
-                change_volume "$2"
-                ;;
-            mute)
-                toggle_mute
-                ;;
-            *)
-                echo "Unknown option: $1"
-                exit 1
-                ;;
-        esac
-        ;;
-    *)
-        echo "Usage: $0 <brightness|volume|mute> <value>"
-        exit 1
-        ;;
-esac
+# Change volume
+change_volume() {
+    local value="$1" dry_run="$2"
+    local current=$(get_volume)
+    value=$(normalize_value "$value" "$current")
+    if [[ "$dry_run" == "true" ]]; then
+        log_action "Dry-run: Would set volume to $value%"
+        show_notification "Volume (Dry)" "Would be: ${value}%" "$value" "volume"
+    else
+        pactl set-sink-volume @DEFAULT_SINK@ "$value%" || { echo "Error: Volume adjustment failed."; exit 1; }
+        log_action "Set volume to $value%"
+        show_notification "Volume" "Current: ${value}%" "$value" "volume"
+    fi
+}
 
+# Toggle mute
+toggle_mute() {
+    local dry_run="$1"
+    if [[ "$dry_run" == "true" ]]; then
+        local muted=$(pactl list sinks | awk '/Mute:/{print $2; exit}')
+        local action="unmute" icon="unmute"
+        [[ "$muted" == "yes" ]] && action="mute" && icon="mute"
+        log_action "Dry-run: Would $action audio"
+        show_notification "Control (Dry)" "Would be: ${action}d" "" "$icon"
+    else
+        pactl set-sink-mute @DEFAULT_SINK@ toggle || { echo "Error: Mute toggle failed."; exit 1; }
+        local muted=$(pactl list sinks | awk '/Mute:/{print $2; exit}')
+        if [[ "$muted" == "yes" ]]; then
+            log_action "Muted audio"
+            show_notification "Control" "Muted" "" "mute"
+        else
+            log_action "Unmuted audio"
+            show_notification "Control" "Unmuted" "" "unmute"
+        fi
+    fi
+}
+
+# Step adjustment
+step_adjust() {
+    local type="$1" direction="$2" step="${3:-$STEP}" dry_run="$4"
+    local sign="+" current
+    [[ "$direction" == "down" ]] && sign="-"
+    case "$type" in
+        brightness) current=$(get_brightness); change_brightness "${sign}${step}" "$dry_run" ;;
+        volume)     current=$(get_volume); change_volume "${sign}${step}" "$dry_run" ;;
+        *)          echo "Error: Unknown type: $type"; exit 1 ;;
+    esac
+}
+
+# Show current status
+show_status() {
+    local bright=$(get_brightness)
+    local vol=$(get_volume)
+    local muted=$(pactl list sinks | awk '/Mute:/{print $2; exit}')
+    echo "Brightness: ${bright}%"
+    echo "Volume: ${vol}%"
+    echo "Mute: $muted"
+}
+
+# Help menu
+show_help() {
+    cat << EOF
+Usage: $0 [options] <command> [value]
+Options:
+  --dry-run    Simulate actions without applying changes
+Commands:
+  brightness <value>    Set brightness (e.g., 50%, +10%, -5%)
+  volume <value>        Set volume (e.g., 50%, +10%, -5%)
+  mute                  Toggle mute/unmute
+  bright-up [step]      Increase brightness (default: $STEP%)
+  bright-down [step]    Decrease brightness (default: $STEP%)
+  vol-up [step]         Increase volume (default: $STEP%)
+  vol-down [step]       Decrease volume (default: $STEP%)
+  status                Show current brightness, volume, and mute status
+  help                  Show this help
+Config: $CONFIG_FILE (optional)
+  STEP=<value>         Default step size
+  MAX=<value>          Maximum value (default: 100)
+  ICON_<key>=<path>    Custom icon paths (e.g., ICON_volume=/path/to/icon.png)
+EOF
+    exit 0
+}
+
+# Main logic
+main() {
+    load_config
+    check_deps
+    local dry_run="false"
+    [[ "$1" == "--dry-run" ]] && { dry_run="true"; shift; }
+
+    [[ "$#" -lt 1 ]] && show_help
+
+    case "$1" in
+        brightness) [[ "$#" -ne 2 ]] && show_help; change_brightness "$2" "$dry_run" ;;
+        volume)     [[ "$#" -ne 2 ]] && show_help; change_volume "$2" "$dry_run" ;;
+        mute)       [[ "$#" -ne 1 ]] && show_help; toggle_mute "$dry_run" ;;
+        bright-up)  step_adjust "brightness" "up" "$2" "$dry_run" ;;
+        bright-down) step_adjust "brightness" "down" "$2" "$dry_run" ;;
+        vol-up)     step_adjust "volume" "up" "$2" "$dry_run" ;;
+        vol-down)   step_adjust "volume" "down" "$2" "$dry_run" ;;
+        status)     show_status ;;
+        help)       show_help ;;
+        *)          echo "Error: Unknown command: $1"; show_help ;;
+    esac
+}
+
+main "$@"
 exit 0
