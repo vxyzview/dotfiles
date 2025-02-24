@@ -1,107 +1,184 @@
 #!/bin/bash
-# shellcheck disable=SC2199
-# shellcheck disable=SC2086
-# shellcheck source=/dev/null
-#
+# Advanced Screenshot Utility
 # Copyright (C) 2024-02 pyranix <pyranix@proton.me>
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# Licensed under Apache License 2.0
 
 # Configuration
-readonly NOTIFY_ICON=""   # Default notification icon
-readonly TIMER_ICON=""    # Timer icon for notifications
-readonly PICTURES_DIR="${XDG_PICTURES_DIR:-$HOME/Pictures}/Screenshots"
-readonly TEMP_DIR=$(mktemp -d)
+readonly NOTIFY_ICON=""
+readonly TIMER_ICON=""
+readonly ERROR_ICON="dialog-error"
+readonly BASE_DIR="${XDG_PICTURES_DIR:-$HOME/Pictures}/Screenshots"
+readonly TEMP_DIR=$(mktemp -d) || exit 1
+readonly DEFAULT_COLOR="#FFFFFF"
+readonly DEFAULT_FORMAT="png"
+readonly VALID_MODES=("full" "window" "area")
+readonly VALID_DELAYS=("now" "5" "10" "custom")
+readonly VALID_FORMATS=("png" "jpg" "webp")
 
-# Function to display a notification with image attachment
-notify_with_image() {
-  local title="$1"
-  local message="$2"
-  local image_path="$3"
-
-  if [[ ! -f "$image_path" ]]; then
-    echo "Error: Image file not found: $image_path"
-    return 1
-  fi
-
-  dunstify --replace=1 -u low -i "$image_path" "$title" "$message"
+# Load user preferences
+load_config() {
+    [[ -f "$HOME/.envvars" ]] && source "$HOME/.envvars"
+    COLOR="${COLOR:-$DEFAULT_COLOR}"
+    FORMAT="${FORMAT:-$DEFAULT_FORMAT}"
+    QUALITY="${QUALITY:-90}"  # Default quality for lossy formats
 }
 
-# Countdown function with notifications
+# Notification system
+notify() {
+    local urgency="$1" title="$2" message="$3" icon="$4" image="${5:-}"
+    local args=("--replace=1" "-u" "$urgency")
+    [[ -n "$icon" ]] && args+=("-i" "$icon")
+    [[ -n "$image" && -f "$image" ]] && args+=("-i" "$image")
+    dunstify "${args[@]}" "$title" "$message" 2>/dev/null
+}
+
+notify_error() { notify "critical" "Error" "$1" "$ERROR_ICON"; }
+
+# Directory setup
+setup_directory() {
+    mkdir -p "$1" || {
+        notify_error "Failed to create directory: $1"
+        exit 1
+    }
+}
+
+# Countdown timer
 countdown() {
-  local duration=$1
-  while (( duration > 0 )); do
-    dunstify --replace=1 -u low -i "$TIMER_ICON" "Taking shot in:" "$duration"
-    sleep 1
-    (( duration-- ))
-  done
+    local seconds="$1"
+    while ((seconds > 0)); do
+        notify "low" "Screenshot in:" "$seconds seconds" "$TIMER_ICON"
+        sleep 1
+        ((seconds--))
+    done
 }
 
-# Take a screenshot and process it
-take_and_process_screenshot() {
-  local temp_file="$TEMP_DIR/temp.png"
-  local file="$PICTURES_DIR/Screenshot_$(date +%Y-%m-%d-%H-%M-%S).png"
-  local option="$1"
-
-  case $option in
-    "full")
-      sleep 0.5
-      maim -u -f png "$temp_file"
-      ;;
-    "window")
-      maim -i "$(xdotool getactivewindow)" "$temp_file"
-      ;;
-    "area")
-      maim -s "$temp_file"
-      ;;
-    *)
-      return 1
-      ;;
-  esac
-
-  convert "$temp_file" \( +clone -background black -shadow 25x30+0+0 \) +swap -background "$COLOR" -layers merge "$file"
-  xclip -selection clipboard -t image/png -i "$file"
-  notify_with_image "Screenshot Taken" "Image copied to clipboard" "$file"
-
-  rm "$temp_file"
+# Capture screenshot
+capture_screenshot() {
+    local mode="$1" output="$2"
+    case "$mode" in
+        "full") maim -u -f "$FORMAT" "$output" ;;
+        "window") maim -i "$(xdotool getactivewindow)" "$output" ;;
+        "area") maim -s "$output" ;;
+        *) return 1 ;;
+    esac
 }
 
-# Main
-create_directory() {
-  [[ -d "$1" ]] || mkdir -p "$1" || { echo "Error creating directory: $1"; exit 1; }
+# Process image
+process_image() {
+    local input="$1" output="$2"
+    local effects=(-background "$COLOR")
+    
+    # Add shadow effect
+    effects+=(\( +clone -background black -shadow 25x30+0+0 \) +swap -layers merge)
+    
+    # Apply format-specific settings
+    case "$FORMAT" in
+        "jpg") effects+=(-quality "$QUALITY") ;;
+        "webp") effects+=(-quality "$QUALITY" -define webp:lossless=false) ;;
+    esac
+    
+    convert "$input" "${effects[@]}" "$output"
 }
 
-create_directory "$PICTURES_DIR"
+# Upload to image hosting (requires curl)
+upload_image() {
+    local file="$1"
+    if command -v curl >/dev/null; then
+        local url=$(curl -s -F "file=@$file" https://0x0.st)
+        [[ -n "$url" ]] && echo "$url" || return 1
+    fi
+}
 
-if [[ -f "$HOME/.envvars" ]]; then
-  source "$HOME/.envvars"
-fi
+# Main screenshot handler
+take_screenshot() {
+    local mode="$1" delay="$2"
+    local temp_file="$TEMP_DIR/temp.$FORMAT"
+    local timestamp=$(date +%Y-%m-%d-%H-%M-%S)
+    local output_file="$BASE_DIR/Screenshot_${timestamp}.$FORMAT"
 
-COLOR="${COLOR:-#FFFFFF}"  # Default color if not set in .envvars
+    # Handle delay
+    [[ "$delay" != "now" ]] && countdown "$delay"
 
-selected_option=$(printf '%s\n' "full" "5" "10" "window" "area" | rofi -dmenu -i -p "Screenshot" -columns 1 -width 30) || exit 1
+    # Capture
+    [[ "$mode" == "full" ]] && sleep 0.5
+    capture_screenshot "$mode" "$temp_file" || {
+        notify_error "Capture failed"
+        rm -f "$temp_file"
+        return 1
+    }
 
-case $selected_option in
-  "full" | "window" | "area")
-    take_and_process_screenshot "$selected_option"
-    ;;
-  "5" | "10")
-    countdown "$selected_option"
-    take_and_process_screenshot "full"
-    ;;
-  *)
-    exit 1
-    ;;
-esac
+    # Process
+    process_image "$temp_file" "$output_file" || {
+        notify_error "Processing failed"
+        rm -f "$temp_file"
+        return 1
+    }
 
-exit 0
+    # Copy to clipboard
+    xclip -selection clipboard -t "image/$FORMAT" -i "$output_file" || {
+        notify_error "Clipboard copy failed"
+    }
+
+    # Optional upload
+    local message="Copied to clipboard\n$output_file"
+    if [[ "$UPLOAD" == "true" ]]; then
+        local url=$(upload_image "$output_file")
+        [[ -n "$url" ]] && message+="\nURL: $url"
+    fi
+
+    notify "low" "Screenshot Saved" "$message" "$NOTIFY_ICON" "$output_file"
+    rm -f "$temp_file"
+}
+
+# Menu system
+show_menu() {
+    local modes=("${VALID_MODES[@]}")
+    local delays=("${VALID_DELAYS[@]}")
+    local formats=("${VALID_FORMATS[@]}")
+    
+    # Build menu options
+    local options=()
+    for mode in "${modes[@]}"; do
+        for delay in "${delays[@]}"; do
+            options+=("$mode ($delay)")
+        done
+    done
+    options+=("Format: $FORMAT")
+
+    printf '%s\n' "${options[@]}" | rofi -dmenu -i -p "Screenshot" -width 40
+}
+
+get_custom_delay() {
+    echo "$(rofi -dmenu -p "Enter delay (seconds):" -width 30)" | grep -o '[0-9]*'
+}
+
+# Main execution
+main() {
+    load_config
+    setup_directory "$BASE_DIR"
+
+    local selection=$(show_menu) || exit 1
+    
+    # Handle format change
+    if [[ "$selection" =~ "Format:" ]]; then
+        FORMAT=$(printf '%s\n' "${VALID_FORMATS[@]}" | 
+                 rofi -dmenu -i -p "Select format" -width 30) || exit 1
+        echo "FORMAT=$FORMAT" >> "$HOME/.envvars"
+        main  # Restart with new format
+        return
+    fi
+
+    # Parse selection
+    local mode=$(echo "$selection" | cut -d'(' -f1 | xargs)
+    local delay=$(echo "$selection" | cut -d'(' -f2 | cut -d')' -f1 | xargs)
+    
+    [[ " ${VALID_MODES[*]} " =~ " $mode " ]] || exit 1
+    [[ "$delay" == "custom" ]] && delay=$(get_custom_delay)
+    [[ -z "$delay" || ( "$delay" != "now" && "$delay" -le 0 ) ]] && exit 1
+
+    take_screenshot "$mode" "$delay"
+}
+
+# Cleanup and run
+trap 'rm -rf "$TEMP_DIR"' EXIT
+main
