@@ -1,224 +1,228 @@
-# Minimalist AS F*vk: Autostart X if running on the first virtual terminal and in an interactive session
-if status is-interactive; and test -z "$DISPLAY" -a "$XDG_VTNR" = 1; exec startx -- -keeptty; end
+# ~/.config/fish/config.fish
+# Maximalist-Minimalist Fish Shell Config for Yogyakarta, Indonesia
+# Last updated: February 26, 2025
 
-# Remove greeting
-set fish_greeting
+# --- Core Setup ---
+if status is-interactive
+    # Auto-start X on tty1
+    if test -z "$DISPLAY" -a "$XDG_VTNR" = 1
+        exec startx -- -keeptty
+    end
 
-# Starship prompt
-starship init fish | source
+    # Silence greeting
+    set -U fish_greeting ""
 
-# Environment variables
-set -x QT_QPA_PLATFORMTHEME "gtk3"
-set -x VISUAL "nvim" 
-set -x EDITOR "geany" 
-set -x TERM "alacritty" 
-set -x HISTCONTROL "ignoredups:erasedups"
-set -x XCURSOR_THEME "oreo_white_cursors xclock"
-
-# Set other env
-set -x XDG_CONFIG_HOME "$HOME/.config"
-set -x XDG_DATA_HOME "$HOME/.local/share"
-set -x XDG_CACHE_HOME "$HOME/.cache"
-
-# Xdeb for voidlinux
-set -x XDEB_OPT_DEPS "true"
-set -x XDEB_OPT_SYNC "true"
-set -x XDEB_OPT_WARN_CONFLICT "true"
-set -x XDEB_OPT_FIX_CONFLICT "true"
-
-# NYoom
-set -x NVIM_APPNAME "nvim"
-
-# Path my script
-set -x PATH "$HOME/.config/nvim/bin:$HOME/.local/bin:$PATH"
-
-# Set keyring
-set -x SSH_AUTH_SOCK
-
-# Change title terminal
-switch $TERM
-    case "xterm*" "rxvt*" "Eterm*" "aterm" "kterm" "gnome*" "alacritty" "st" "konsole*"; set -x PROMPT_COMMAND 'echo -ne "\033]0;($USER@$HOSTNAME:r):($PWD:r)\007"'
-    case "screen*"; set -x PROMPT_COMMAND 'echo -ne "\033_]($USER@$HOSTNAME:r):($PWD:r)\033\\"'
-end
-
-# Navigation
-function up
-    set d ""
-    set limit $argv[1]
-
-    # Default to limit of 1
-    if [ -z "$limit" ] || [ "$limit" -le 0 ]; set limit 1; end
-
-    for i in (seq $limit); set d "../$d"; end
-
-    # perform cd. Show error if cd fails
-    if not cd "$d"; echo "Couldn't go up $limit dirs."; end
-end
-
-# Vim
-alias vim 'neovim'
-
-# Changing "ls" to "exa"
-alias ls 'exa -al --color=always --group-directories-first'
-alias la 'exa -a --color=always --group-directories-first'
-alias ll 'exa -l --color=always --group-directories-first'
-alias lt 'exa -aT --color=always --group-directories-first'
-alias l. 'exa -a | egrep "^\."'
-
-# Clear vkpurge alias
-function clrk
-    sudo vkpurge rm all
-end
-
-# XBPS
-alias vu 'sudo xbps-install -Syuv'
-alias vp 'sudo xbps-install -Sy'
-alias vr 'sudo xbps-remove -Rcon'
-alias vfr 'sudo xbps-remove -Rcon -F'
-alias vq 'xbps-query -l'
-alias vf 'vq | grep'
-alias vs 'xbps-query -Rs'
-alias vd 'xbps-query -x'
-
-# Flatpak
-alias fu 'flatpak update'
-alias fi 'flatpak install'
-alias ff 'flatpak repair'
-alias fs 'flatpak search'
-alias fl 'flatpak list'
-alias fr 'flatpak uninstall --delete-data'
-alias fc 'flatpak uninstall --unused'
-
-# Nix
-alias nu 'nix-env -u'
-alias nf 'nix-env --query'
-alias na 'nix-env --query "*"'
-alias ni 'nix-env -i'
-alias nr 'nix-env -e'
-alias ns 'nix search'
-alias no 'nix-env --rollback'
-alias ncl 'nix-channel --list'
-alias nca 'nix-channel --add'
-alias ncu 'nix-channel --update'
-
-# Arch & Paru
-alias pacs 'sudo pacman -Syu'
-alias paci 'sudo pacman -S --noconfirm'
-alias pacr 'sudo pacman -Rs'
-alias pacq 'pacman -Q'
-alias pacinfo 'pacman -Qi'
-alias pacfiles 'pacman -Ql'
-alias paruup 'paru -Syu'
-alias parui 'paru -S'
-alias parur 'paru -Rs'
-alias paruq 'paru -Q'
-alias paruinfo 'paru -Qi'
-alias parufiles 'paru -Ql'
-alias unlock 'sudo rm /var/lib/pacman/db.lck'
-alias cleanup 'sudo pacman -Rns (pacman -Qtdq)'
-
-# Clear cmd
-alias c 'clear'
-
-# Get fastest mirrors
-alias mirror "sudo reflector -f 30 -l 30 --number 10 --verbose --save /etc/pacman.d/mirrorlist"
-alias mirrord "sudo reflector --latest 50 --number 20 --sort delay --save /etc/pacman.d/mirrorlist"
-alias mirrors "sudo reflector --latest 50 --number 20 --sort score --save /etc/pacman.d/mirrorlist"
-alias mirrora "sudo reflector --latest 50 --number 20 --sort age --save /etc/pacman.d/mirrorlist"
-
-# Colorize grep output (good for log files)
-alias grep 'grep --color=auto'
-alias egrep 'egrep --color=auto'
-alias fgrep 'fgrep --color=auto'
-
-# Adding flags
-alias df 'df -h'
-alias free 'free -m'
-
-# Ps
-alias psa "ps auxf"
-alias psgrep "ps aux | grep -v grep | grep -i -e VSZ -e"
-alias psmem 'ps auxf | sort -nr -k 4'
-alias pscpu 'ps auxf | sort -nr -k 3'
-
-# Merge Xresources
-alias merge 'xrdb -merge ~/.Xresources'
-
-# Git
-alias addup 'git add -u'
-alias addall 'git add .'
-alias branch 'git branch'
-alias checkout 'git checkout'
-alias clone 'git clone'
-alias cdepth 'git clone --depth=1'
-alias addco 'git add . && git commit -s'
-alias fetch 'git fetch'
-alias pull 'git pull origin'
-alias push 'git push origin'
-alias stat 'git status'
-alias tag 'git tag'
-alias newtag 'git tag -a'
-alias seturl 'git remote set-url origin'
-
-# Get error messages from journalctl
-alias jctl "journalctl -p 3 -xb"
-
-# GPG encryption
-# Verify signature for isos
-alias gpg-check "gpg2 --keyserver-options auto-key-retrieve --verify"
-# Receive the key of a developer
-alias gpg-retrieve "gpg2 --keyserver-options auto-key-retrieve --receive-keys"
-
-# Play audio files in the current dir by type
-alias playwav 'mpv *.wav'
-alias playogg 'mpv *.ogg'
-alias playmp3 'mpv *.mp3'
-
-# Play video files in the current dir by type
-alias playavi 'mpv *.avi'
-alias playmov 'mpv *.mov'
-alias playmp4 'mpv *.mp4'
-
-# Switch between shells
-alias tobash "sudo chsh $USER -s /bin/bash"
-alias tozsh "sudo chsh $USER -s /bin/zsh"
-alias tofish "sudo chsh $USER -s /bin/fish"
-
-# Termbin
-alias tb "nc termbin.com 9999"
-
-# The terminal rickroll
-alias rr 'curl -s -L https://raw.githubusercontent.com/keroserene/rickrollrc/master/roll.sh | bash'
-
-# Countdown
-function cdown
-    set N $argv[1]
-    while test $N -gt 0
-        echo "$N" | figlet -c | lolcat; and sleep 1
-        set N (math $N - 1)
+    # Starship prompt with fallback
+    if command -q starship
+        starship init fish | source
+    else
+        function fish_prompt
+            set_color cyan; echo -n "$USER@$HOSTNAME:"
+            set_color yellow; echo -n (basename $PWD)
+            set_color normal; echo -n '> '
+        end
     end
 end
 
-# Ssh
-eval (ssh-agent -c) > /dev/null 2>&1 &
+# --- Environment ---
+set -x XDG_CONFIG_HOME "$HOME/.config"
+set -x XDG_DATA_HOME "$HOME/.local/share"
+set -x XDG_CACHE_HOME "$HOME/.cache"
+set -x PATH "$XDG_CONFIG_HOME/nvim/bin" "$HOME/.local/bin" "$HOME/.cargo/bin" "$PATH"
+set -x VISUAL "nvim"
+set -x EDITOR "geany"
+set -x TERM "alacritty"
+set -x QT_QPA_PLATFORMTHEME "gtk3"
+set -x HISTCONTROL "ignoredups:erasedups"
+set -x XCURSOR_THEME "oreo_white_cursors"
+set -x NVIM_APPNAME "nvim"
+set -x RUSTUP_HOME "$XDG_DATA_HOME/rustup"
+set -x CARGO_HOME "$XDG_DATA_HOME/cargo"
+set -x SSH_AUTH_SOCK (ssh-agent -c | grep -m 1 setenv | awk '{print $2}' | tr -d ';') &
 
-# Simple power
-alias soff 'systemctl poweroff'
-alias sboot 'systemctl reboot'
-alias spend 'systemctl suspend'
-alias ssleep 'systenctl sleep'
-alias loff 'loginctl poweroff'
-alias lboot 'loginctl reboot'
-alias lpend 'loginctl suspend'
-alias lsleep 'loginctl sleep'
+# --- Terminal Magic ---
+function _set_title --on-variable PWD
+    switch $TERM
+        case "xterm*" "alacritty" "st"
+            echo -ne "\033]0;$USER@$HOSTNAME:(basename $PWD)\007"
+        case "screen*"
+            echo -ne "\033_$USER@$HOSTNAME:(basename $PWD)\033\\"
+    end
+end
 
-# Web development
-alias xrun 'sudo /opt/lampp/lampp start'
-alias xstop 'sudo /opt/lampp/lampp stop'
-alias mxampp 'sudo ./opt/lamp/manager-linux-x64.run'
+# --- Functions ---
+function up --description "Navigate up N dirs"
+    set -l limit (math max 1, "$argv[1]" 2>/dev/null; or echo 1)
+    cd (string repeat -n $limit "../") || echo "Failed to climb $limit dirs."
+end
 
-# Clipboard
-alias clipp 'xclip -sel clip'
+function cdown --description "Countdown with Yogyakarta flair"
+    set -l N (math max 1, "$argv[1]" 2>/dev/null; or echo 10)
+    while test $N -ge 0
+        clear
+        echo "$N" | figlet -f slant -c | lolcat -a -s 50
+        sleep 1
+        set N (math $N - 1)
+    end
+    echo "Selesai from Yogyakarta!" | figlet -f mini -c | lolcat
+    sleep 1
+end
 
-# Neovim
-alias nvim 'nvim +Nvdash'
+function backup --description "Timestamped file backup"
+    set -l file $argv[1]
+    test -n "$file" -a -e "$file" && cp -v "$file" "$file.bak.(date +%Y%m%d_%H%M%S)" || echo "Backup what? Usage: backup <file>"
+end
+
+function extract --description "Universal archive extractor"
+    if test -f "$argv[1]"
+        switch (string lower (path extension "$argv[1]"))
+            case ".tar.gz" ".tgz"; tar xzf "$argv[1]"
+            case ".tar.bz2" ".tbz2"; tar xjf "$argv[1]"
+            case ".tar.xz" ".txz"; tar xJf "$argv[1]"
+            case ".tar"; tar xf "$argv[1]"
+            case ".zip"; unzip -q "$argv[1]"
+            case ".rar"; unrar x -inul "$argv[1]"
+            case ".7z"; 7z x "$argv[1]" -o(output dirname "$argv[1]") >/dev/null
+            case "*"; echo "Unknown archive: $argv[1]"
+        end
+    else
+        echo "Extract what? Usage: extract <archive>"
+    end
+end
+
+function mkcd --description "Make and enter directory"
+    mkdir -p "$argv[1]" && cd "$argv[1]" || echo "Failed to mkcd $argv[1]"
+end
+
+function sizeof --description "Size of file or dir"
+    if test -e "$argv[1]"
+        du -sh "$argv[1]" | cut -f1
+    else
+        echo "Size of what? Usage: sizeof <path>"
+    end
+end
+
+function cheat --description "Quick cheat.sh lookup"
+    curl -s "cheat.sh/$argv[1]" | less -R
+end
+
+# --- Aliases ---
+# Basics
+alias c 'clear'
+alias e 'exit'
+alias h 'history --max 50 | grep -v "^ "' # Skip trivial commands
+alias t 'tmux new -A -s main' # Persistent tmux session
+
+# Files & Dirs
+alias ls 'exa -al --color=always --group-directories-first --git --time-style=long-iso'
+alias la 'exa -a --color=always'
+alias ll 'exa -l --color=always --git'
+alias lt 'exa -aT --color=always --level=2'
+alias l. 'exa -a | grep "^\."'
+alias duh 'du -h --max-depth=1 | sort -hr'
+alias f 'fd --hidden --no-ignore --type f'
+alias d 'fd --hidden --no-ignore --type d'
+
+# Editors
+alias v 'nvim'
+alias n 'nvim +Nvdash'
+alias g 'geany'
+
+# System
+alias off 'systemctl poweroff'
+alias boot 'systemctl reboot'
+alias zzz 'systemctl suspend'
+alias topc 'ps aux | sort -nr -k 3 | head -10'
+alias topm 'ps aux | sort -nr -k 4 | head -10'
+alias j 'journalctl -p 3 -xb --no-pager'
+alias k 'killall'
+alias clrk 'sudo vkpurge rm all'
+
+# Package Managers
+# XBPS (Void Linux)
+alias xu 'sudo xbps-install -Syu'
+alias xi 'sudo xbps-install -S'
+alias xr 'sudo xbps-remove -R'
+alias xs 'xbps-query -Rs'
+alias xl 'xbps-query -l | sort'
+
+# Flatpak
+alias fu 'flatpak update -y'
+alias fi 'flatpak install -y'
+alias fr 'flatpak uninstall --delete-data'
+alias fl 'flatpak list --app'
+
+# Nix
+alias nu 'nix-env -u'
+alias ni 'nix-env -iA'
+alias nr 'nix-env -e'
+alias ns 'nix search'
+
+# Arch (Pacman & Paru)
+alias pu 'sudo pacman -Syu'
+alias pi 'sudo pacman -S --noconfirm'
+alias pr 'sudo pacman -Rs'
+alias pq 'pacman -Q | sort'
+alias pl 'paccache -r; sudo pacman -Sc'
+alias pup 'paru -Syu'
+alias pui 'paru -S'
+
+# Rust (Cargo)
+alias cr 'cargo run'
+alias cb 'cargo build'
+alias ct 'cargo test'
+alias cup 'rustup update'
+
+# Git
+alias ga 'git add .'
+alias gc 'git commit -s -m'
+alias gp 'git push'
+alias gl 'git pull'
+alias gs 'git status -s'
+alias gd 'git diff --color-words'
+alias gb 'git branch'
+alias gcl 'git clone --depth=1'
+alias glog 'git log --oneline --graph --all'
+
+# Network
+alias ipa 'ip -c a'
+alias p 'ping -c 10 google.com'
+alias speed 'speedtest-cli --simple'
+alias ipi 'curl -s ifconfig.me/all.json | jq -r ".ip_addr + \" (\" + .city + \", \" + .country + \")\""'
+alias w 'curl "wttr.in/Yogyakarta,Indonesia?format=%C+%t+%w+%m&lang=id"' # Weather in Yogyakarta, Bahasa Indonesia
+
+# Media & Web
+alias mp3 'mpv --shuffle --loop *.mp3'
+alias mp4 'mpv --shuffle --loop *.mp4'
+alias yt 'yt-dlp -f "bestvideo+bestaudio/best" -o "%(title)s.%(ext)s"'
+alias ytm 'yt-dlp -x --audio-format mp3 -o "%(title)s.%(ext)s"'
+
+# Local Flavor
+alias jam 'date +"%H:%M WIB"' # Waktu Indonesia Barat (Yogyakarta time)
+alias pray 'curl -s "https://api.myquran.com/v2/sholat/jadwal/1301/(date +%Y-%m-%d)" | jq -r ".data.jadwal | [.subuh, .dzuhur, .ashar, .maghrib, .isya] | join(\" | \")"' # Prayer times for Yogyakarta (code 1301)
+
+# Utils
+alias tb 'nc termbin.com 9999'
+alias calc 'python3 -ic "from math import *; from statistics import *; import cmath"'
+alias rand 'openssl rand -int 100'
+alias uuid 'uuidgen | tr "[:upper:]" "[:lower:]"'
+
+# --- Lazy Load for Heavy Tools ---
+function lazyload
+    set -l cmd $argv[1]
+    if not functions -q "__original_$cmd"
+        function __original_$cmd -V cmd
+            eval (functions $cmd | string replace "__original_$cmd" "$cmd")
+            unfunction $cmd
+            eval "$cmd $argv"
+        end
+        function $cmd
+            __original_$cmd $argv
+        end
+    end
+end
+lazyload nvim
+lazyload cargo
+
+# --- Initialization ---
+_set_title
