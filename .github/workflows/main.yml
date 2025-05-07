@@ -1,37 +1,36 @@
 name: Test All Bash Scripts
 
-on:
-  push:
-    branches: [dev]
-  pull_request:
-    branches: [dev]
+on: [push, pull_request]
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    container: archlinux:latest  # Gunakan Void jika mau, atau buat Dockerfile sendiri
+    container: archlinux:latest
 
     steps:
       - name: Install dependencies
         run: |
-          pacman -Syu --noconfirm bash git curl sudo shellcheck
+          pacman -Syu --noconfirm sudo git base-devel curl shellcheck
+          useradd -m testuser
+          echo 'testuser ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Find and lint all Bash scripts
+      - name: Set permissions
         run: |
-          echo "[ INFO ] Running ShellCheck on all bash scripts..."
-          find . -type f -name "*.sh" -o -exec grep -Iq bash {} \; | while read -r script; do
-            echo "[ CHECK ] $script"
-            shellcheck "$script"
-          done
+          chown -R testuser:testuser .
 
-      - name: Run all Bash scripts (test execution)
+      - name: Run shellcheck
         run: |
-          echo "[ INFO ] Running all bash scripts (non-interactive, test mode)..."
-          chmod +x $(find . -type f -name "*.sh")
-          find . -type f -name "*.sh" | while read -r script; do
-            echo "[ EXEC ] Running $script"
-            timeout 30s bash "$script" || echo "[ WARN ] $script failed or timed out"
-          done
+          find . -type f -name "*.sh" -exec shellcheck {} \;
+
+      - name: Run scripts as non-root user
+        run: |
+          su testuser -c '
+            chmod +x $(find . -type f -name "*.sh")
+            find . -type f -name "*.sh" | while read -r script; do
+              echo "[ EXEC ] Running $script"
+              timeout 60s bash "$script" || echo "[ WARN ] $script failed or timed out"
+            done
+          '
