@@ -1,107 +1,402 @@
-#!/bin/bash
-# shellcheck disable=SC2199
-# shellcheck disable=SC2086
-# shellcheck source=/dev/null
-#
-# Copyright (C) 2024-02 pyranix <pyranix@proton.me>
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+#!/usr/bin/env bash
 
-# Configuration
-readonly NOTIFY_ICON=""   # Default notification icon
-readonly TIMER_ICON=""    # Timer icon for notifications
+# Enhanced Screenshot Script
+# Features:
+# - Multiple screenshot modes (full, window, area)
+# - Delayed capture with countdown
+# - Shadow effects with customizable colors
+# - Notifications with preview
+# - Clipboard integration
+# - Custom output filename format
+# - Error handling and logging
+
+# ============= CONFIGURATION =============
+# Icons for notifications (can be paths to image files or icon names)
+readonly NOTIFY_ICON="camera-photo"
+readonly TIMER_ICON="appointment-soon"
+
+# Directories
 readonly PICTURES_DIR="${XDG_PICTURES_DIR:-$HOME/Pictures}/Screenshots"
+readonly LOG_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/screenshot-script"
+readonly LOG_FILE="$LOG_DIR/screenshot.log"
 readonly TEMP_DIR=$(mktemp -d)
+
+# Default settings (can be overridden in ~/.config/screenshot-config)
+CONFIG_FILE="$HOME/.config/screenshot-config"
+SHADOW_COLOR="#000000"
+SHADOW_OPACITY=50
+SHADOW_SIZE=15
+SHADOW_OFFSET="+5+5"
+BACKGROUND_COLOR="#FFFFFF"
+FILENAME_FORMAT="Screenshot_%Y-%m-%d_%H-%M-%S"
+QUALITY=100
+COPY_TO_CLIPBOARD=true
+SHOW_NOTIFICATION=true
+SHOW_CURSOR=false
+
+# ============= FUNCTIONS =============
+# Function to log messages
+log() {
+    local level="$1"
+    local message="$2"
+    local timestamp=$(date "+%Y-%m-%d %H:%M:%S")
+    echo "[$timestamp] [$level] $message" >> "$LOG_FILE"
+    
+    if [[ "$level" == "ERROR" ]]; then
+        echo "Error: $message" >&2
+    elif [[ "$level" == "DEBUG" && -n "$DEBUG" ]]; then
+        echo "Debug: $message"
+    fi
+}
+
+# Function to create directories if they don't exist
+create_directory() {
+    if [[ ! -d "$1" ]]; then
+        mkdir -p "$1" || { log "ERROR" "Failed to create directory: $1"; exit 1; }
+        log "INFO" "Created directory: $1"
+    fi
+}
 
 # Function to display a notification with image attachment
 notify_with_image() {
-  local title="$1"
-  local message="$2"
-  local image_path="$3"
+    if [[ "$SHOW_NOTIFICATION" != "true" ]]; then
+        return 0
+    fi
+    
+    local title="$1"
+    local message="$2"
+    local image_path="$3"
+    local icon="${4:-$NOTIFY_ICON}"
 
-  if [[ ! -f "$image_path" ]]; then
-    echo "Error: Image file not found: $image_path"
-    return 1
-  fi
-
-  dunstify --replace=1 -u low -i "$image_path" "$title" "$message"
+    if [[ -f "$image_path" ]]; then
+        dunstify --replace=1 -u low -i "$icon" "$title" "$message" -I "$image_path"
+        log "INFO" "Notification sent with image: $image_path"
+    else
+        dunstify --replace=1 -u low -i "$icon" "$title" "$message"
+        log "WARN" "Image for notification not found: $image_path"
+    fi
 }
 
 # Countdown function with notifications
 countdown() {
-  local duration=$1
-  while (( duration > 0 )); do
-    dunstify --replace=1 -u low -i "$TIMER_ICON" "Taking shot in:" "$duration"
-    sleep 1
-    (( duration-- ))
-  done
+    local duration=$1
+    log "INFO" "Starting countdown for $duration seconds"
+    
+    dunstify --replace=1 -u low -i "$TIMER_ICON" "Preparing Screenshot" "Starting in $duration seconds..."
+    
+    while (( duration > 0 )); do
+        dunstify --replace=1 -u low -i "$TIMER_ICON" "Taking screenshot in:" "$duration seconds"
+        sleep 1
+        (( duration-- ))
+    done
+    
+    # Final notification right before capture
+    if (( duration == 0 )); then
+        dunstify --replace=1 -u low -i "$TIMER_ICON" "Taking Screenshot" "Now!"
+    fi
+}
+
+# Function to process image with effects
+process_image() {
+    local input="$1"
+    local output="$2"
+    
+    # Create a backup of the original image
+    cp "$input" "${TEMP_DIR}/original.png"
+    
+    # Add shadow effect if enabled
+    if [[ "$ADD_SHADOW" == "true" ]]; then
+        convert "$input" \
+            \( +clone -background "$SHADOW_COLOR" -shadow "${SHADOW_OPACITY}x${SHADOW_SIZE}${SHADOW_OFFSET}" \) \
+            +swap -background "$BACKGROUND_COLOR" -layers merge \
+            -quality "$QUALITY" "$output"
+        log "INFO" "Added shadow effect to image"
+    else
+        # Just optimize the image
+        convert "$input" -quality "$QUALITY" "$output"
+        log "INFO" "Optimized image without shadow"
+    fi
+    
+    # Check if the conversion was successful
+    if [[ ! -f "$output" || ! -s "$output" ]]; then
+        log "ERROR" "Image processing failed"
+        cp "${TEMP_DIR}/original.png" "$output"
+        log "INFO" "Reverted to original image due to processing failure"
+    fi
+}
+
+# Function to copy image to clipboard
+copy_to_clipboard() {
+    local file="$1"
+    
+    if [[ "$COPY_TO_CLIPBOARD" == "true" ]]; then
+        if command -v xclip &>/dev/null; then
+            xclip -selection clipboard -t image/png -i "$file"
+            log "INFO" "Image copied to clipboard using xclip"
+        elif command -v wl-copy &>/dev/null; then
+            wl-copy < "$file"
+            log "INFO" "Image copied to clipboard using wl-copy"
+        else
+            log "WARN" "No clipboard tool found (xclip or wl-copy)"
+            return 1
+        fi
+    fi
 }
 
 # Take a screenshot and process it
-take_and_process_screenshot() {
-  local temp_file="$TEMP_DIR/temp.png"
-  local file="$PICTURES_DIR/Screenshot_$(date +%Y-%m-%d-%H-%M-%S).png"
-  local option="$1"
+take_screenshot() {
+    local temp_file="$TEMP_DIR/temp.png"
+    local filename=$(date +"$FILENAME_FORMAT").png
+    local file="$PICTURES_DIR/$filename"
+    local option="$1"
+    local delay="${2:-0}"
+    local success=false
+    
+    log "INFO" "Taking screenshot: mode=$option, delay=$delay"
+    
+    # Add delay if specified
+    if (( delay > 0 )); then
+        countdown "$delay"
+    elif [[ "$option" == "full" ]]; then
+        # Add a small delay for full screenshots to allow notifications to disappear
+        sleep 0.5
+    fi
 
-  case $option in
-    "full")
-      sleep 0.5
-      maim -u -f png "$temp_file"
-      ;;
-    "window")
-      maim -i "$(xdotool getactivewindow)" "$temp_file"
-      ;;
-    "area")
-      maim -s "$temp_file"
-      ;;
-    *)
-      return 1
-      ;;
-  esac
-
-  convert "$temp_file" \( +clone -background black -shadow 25x30+0+0 \) +swap -background "$COLOR" -layers merge "$file"
-  xclip -selection clipboard -t image/png -i "$file"
-  notify_with_image "Screenshot Taken" "Image copied to clipboard" "$file"
-
-  rm "$temp_file"
+    # Determine which tool to use
+    if command -v maim &>/dev/null; then
+        # Using maim for X11
+        local cursor_flag=""
+        [[ "$SHOW_CURSOR" == "true" ]] && cursor_flag="--hidecursor=false" || cursor_flag="--hidecursor=true"
+        
+        case $option in
+            "full")
+                maim -u -f png $cursor_flag "$temp_file" && success=true
+                ;;
+            "window")
+                if command -v xdotool &>/dev/null; then
+                    maim -i "$(xdotool getactivewindow)" $cursor_flag "$temp_file" && success=true
+                else
+                    log "ERROR" "xdotool not found, required for window screenshots"
+                    notify_with_image "Screenshot Failed" "xdotool not installed" ""
+                fi
+                ;;
+            "area")
+                maim -s $cursor_flag "$temp_file" && success=true
+                ;;
+            *)
+                log "ERROR" "Invalid screenshot option: $option"
+                return 1
+                ;;
+        esac
+    elif command -v grim &>/dev/null; then
+        # Using grim for Wayland
+        case $option in
+            "full")
+                grim "$temp_file" && success=true
+                ;;
+            "window")
+                if command -v swaymsg &>/dev/null; then
+                    grim -g "$(swaymsg -t get_tree | jq -r '.. | select(.focused?) | .rect | "\(.x),\(.y) \(.width)x\(.height)"')" "$temp_file" && success=true
+                else
+                    log "ERROR" "swaymsg not found, required for window screenshots in Wayland"
+                    notify_with_image "Screenshot Failed" "swaymsg not installed" ""
+                fi
+                ;;
+            "area")
+                if command -v slurp &>/dev/null; then
+                    grim -g "$(slurp)" "$temp_file" && success=true
+                else
+                    log "ERROR" "slurp not found, required for area screenshots in Wayland"
+                    notify_with_image "Screenshot Failed" "slurp not installed" ""
+                fi
+                ;;
+        esac
+    else
+        log "ERROR" "No screenshot tool found (maim or grim)"
+        notify_with_image "Screenshot Failed" "No screenshot tool installed" ""
+        return 1
+    fi
+    
+    # Check if screenshot was successful
+    if [[ "$success" == "true" && -f "$temp_file" && -s "$temp_file" ]]; then
+        # Process the image with effects
+        process_image "$temp_file" "$file"
+        
+        # Copy to clipboard
+        copy_to_clipboard "$file"
+        
+        # Show notification
+        local message="Saved to $PICTURES_DIR"
+        [[ "$COPY_TO_CLIPBOARD" == "true" ]] && message+=" and copied to clipboard"
+        notify_with_image "Screenshot Captured" "$message" "$file"
+        
+        log "INFO" "Screenshot saved to: $file"
+        echo "$file"  # Output the file path for potential scripting use
+    else
+        log "ERROR" "Failed to capture screenshot"
+        notify_with_image "Screenshot Failed" "Failed to capture image" ""
+        return 1
+    fi
+    
+    # Clean up
+    rm -f "$temp_file" "${TEMP_DIR}/original.png"
 }
 
-# Main
-create_directory() {
-  [[ -d "$1" ]] || mkdir -p "$1" || { echo "Error creating directory: $1"; exit 1; }
+# Load user configuration if exists
+load_config() {
+    if [[ -f "$CONFIG_FILE" ]]; then
+        log "INFO" "Loading configuration from $CONFIG_FILE"
+        source "$CONFIG_FILE"
+    fi
+    
+    # Load environment variables if available
+    if [[ -f "$HOME/.envvars" ]]; then
+        log "INFO" "Loading environment variables from .envvars"
+        source "$HOME/.envvars"
+    fi
+    
+    # Environment variables override config file settings
+    [[ -n "$COLOR" ]] && BACKGROUND_COLOR="$COLOR"
+    [[ -n "$SCREENSHOT_SHADOW" ]] && ADD_SHADOW="$SCREENSHOT_SHADOW"
+    [[ -n "$SCREENSHOT_FORMAT" ]] && FILENAME_FORMAT="$SCREENSHOT_FORMAT"
 }
 
-create_directory "$PICTURES_DIR"
+# Show usage information
+show_help() {
+    cat << EOF
+Enhanced Screenshot Script
 
-if [[ -f "$HOME/.envvars" ]]; then
-  source "$HOME/.envvars"
-fi
+Usage: $(basename $0) [OPTIONS] [MODE]
 
-COLOR="${COLOR:-#FFFFFF}"  # Default color if not set in .envvars
+Modes:
+  full      Capture entire screen
+  window    Capture active window
+  area      Capture selected area
+  
+Options:
+  -d, --delay NUM    Add delay of NUM seconds before capture
+  -s, --shadow       Add shadow effect to screenshot
+  -n, --no-shadow    Disable shadow effect
+  -c, --clipboard    Copy to clipboard only (don't save file)
+  -q, --quality NUM  Set image quality (1-100)
+  -o, --output FILE  Specify output filename
+  -h, --help         Show this help message
+  --cursor           Include cursor in screenshot
+  --no-notify        Disable notifications
+  
+Configuration file: ~/.config/screenshot-config
 
-selected_option=$(printf '%s\n' "full" "5" "10" "window" "area" | rofi -dmenu -i -p "Screenshot" -columns 1 -width 30) || exit 1
+EOF
+    exit 0
+}
 
-case $selected_option in
-  "full" | "window" | "area")
-    take_and_process_screenshot "$selected_option"
-    ;;
-  "5" | "10")
-    countdown "$selected_option"
-    take_and_process_screenshot "full"
-    ;;
-  *)
-    exit 1
-    ;;
-esac
+# ============= MAIN EXECUTION =============
+main() {
+    # Create required directories
+    create_directory "$PICTURES_DIR"
+    create_directory "$LOG_DIR"
+    create_directory "$TEMP_DIR"
+    
+    # Load user configuration
+    load_config
+    
+    # Set defaults
+    ADD_SHADOW=${ADD_SHADOW:-true}
+    
+    # Parse command line arguments
+    if [[ $# -gt 0 ]]; then
+        local mode=""
+        local delay=0
+        
+        while [[ $# -gt 0 ]]; do
+            case $1 in
+                -h|--help)
+                    show_help
+                    ;;
+                -d|--delay)
+                    delay="$2"
+                    shift 2
+                    ;;
+                -s|--shadow)
+                    ADD_SHADOW=true
+                    shift
+                    ;;
+                -n|--no-shadow)
+                    ADD_SHADOW=false
+                    shift
+                    ;;
+                -c|--clipboard)
+                    COPY_TO_CLIPBOARD=true
+                    shift
+                    ;;
+                -q|--quality)
+                    QUALITY="$2"
+                    shift 2
+                    ;;
+                -o|--output)
+                    custom_output="$2"
+                    shift 2
+                    ;;
+                --cursor)
+                    SHOW_CURSOR=true
+                    shift
+                    ;;
+                --no-notify)
+                    SHOW_NOTIFICATION=false
+                    shift
+                    ;;
+                full|window|area)
+                    mode="$1"
+                    shift
+                    ;;
+                *)
+                    log "ERROR" "Unknown option: $1"
+                    show_help
+                    ;;
+            esac
+        done
+        
+        if [[ -n "$mode" ]]; then
+            take_screenshot "$mode" "$delay"
+            exit $?
+        fi
+    fi
+    
+    # If no arguments provided, show interactive menu
+    if command -v rofi &>/dev/null; then
+        selected_option=$(printf '%s\n' "Full Screen" "Active Window" "Selected Area" "Delay 3s" "Delay 5s" "Delay 10s" | 
+            rofi -dmenu -i -p "Screenshot" -columns 1 -width 30) || exit 1
+        
+        case "$selected_option" in
+            "Full Screen")
+                take_screenshot "full"
+                ;;
+            "Active Window")
+                take_screenshot "window"
+                ;;
+            "Selected Area")
+                take_screenshot "area"
+                ;;
+            "Delay 3s")
+                take_screenshot "full" 3
+                ;;
+            "Delay 5s")
+                take_screenshot "full" 5
+                ;;
+            "Delay 10s")
+                take_screenshot "full" 10
+                ;;
+            *)
+                log "INFO" "No option selected"
+                exit 0
+                ;;
+        esac
+    else
+        log "ERROR" "rofi not found, required for interactive mode"
+        notify_with_image "Screenshot Failed" "rofi not installed" ""
+        exit 1
+    fi
+}
 
-exit 0
+# Run the main function with all arguments
+main "$@"
