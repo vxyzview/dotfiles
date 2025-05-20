@@ -1,46 +1,167 @@
 #!/bin/bash
-# shellcheck disable=SC2199
-# shellcheck disable=SC2086
-# shellcheck source=/dev/null
-#
-# Copyright (C) 2024-02 pyranix <pyranix@proton.me>
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# Directory for wallpapers
-WALLPAPER_DIR="$HOME/.wallpaper"
+# Enhanced Wallpaper Selector Script
+# Supports image previews, last used wallpapers, and better error handling
 
-# Check if Rofi and Feh are installed
-if ! command -v rofi &> /dev/null || ! command -v feh &> /dev/null; then
-    echo "Error: Rofi or feh not found. Please install the required tools."
+# Configuration
+WALLPAPER_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/wallpapers"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/wallpaper-selector"
+HISTORY_FILE="$CONFIG_DIR/history"
+NOTIFY_ICON="${XDG_DATA_HOME:-$HOME/.local/share}/icons/wallpaper.png"
+ROFI_THEME="${XDG_CONFIG_HOME:-$HOME/.config}/rofi/wallpaper-theme.rasi"
+MAX_HISTORY=5
+
+# Create directories if they don't exist
+mkdir -p "$WALLPAPER_DIR" "$CONFIG_DIR"
+touch "$HISTORY_FILE"
+
+# Function to display error message and exit
+show_error() {
+    local message="$1"
+    dunstify -u critical -i dialog-error "Wallpaper Selector" "$message" 2>/dev/null || \
+    notify-send -u critical "Wallpaper Selector" "$message" 2>/dev/null || \
+    echo "Error: $message" >&2
     exit 1
-fi
+}
 
-# Check if the wallpaper directory exists
-if [ ! -d "$WALLPAPER_DIR" ]; then
-    echo "Error: Wallpaper directory not found: $WALLPAPER_DIR"
-    exit 1
-fi
+# Function to display notification
+show_notification() {
+    local message="$1"
+    if [ -f "$NOTIFY_ICON" ]; then
+        dunstify -i "$NOTIFY_ICON" "Wallpaper Selector" "$message" 2>/dev/null || \
+        notify-send -i "$NOTIFY_ICON" "Wallpaper Selector" "$message" 2>/dev/null || \
+        echo "$message"
+    else
+        dunstify "Wallpaper Selector" "$message" 2>/dev/null || \
+        notify-send "Wallpaper Selector" "$message" 2>/dev/null || \
+        echo "$message"
+    fi
+}
 
-# Use rofi to select a wallpaper
-selected_wallpaper=$(ls "$WALLPAPER_DIR" | rofi -dmenu -p "Select Wallpaper:")
+# Check dependencies
+check_dependencies() {
+    local missing=""
+    for cmd in rofi feh; do
+        if ! command -v "$cmd" &>/dev/null; then
+            missing="$missing $cmd"
+        fi
+    done
+    
+    if [ -n "$missing" ]; then
+        show_error "Missing required dependencies:$missing"
+    fi
+}
 
-# Check if the wallpaper selection is not empty
-if [ -n "$selected_wallpaper" ]; then
-    # Set the selected wallpaper
-    feh --bg-fill "$WALLPAPER_DIR/$selected_wallpaper"
-    dunstify -i "$HOME/.notify/images/wallpaper.png" "Wallpaper '$selected_wallpaper' set successfully!"
-else
-    dunstify -i "$HOME/.notify/images/wallpaper.png" "No wallpaper selected. Using the default wallpaper."
-fi
+# Add wallpaper to history
+add_to_history() {
+    local wallpaper="$1"
+    # Remove existing entry if present
+    sed -i "\|^$wallpaper$|d" "$HISTORY_FILE"
+    # Add to the top
+    echo "$wallpaper" | cat - "$HISTORY_FILE" > "$CONFIG_DIR/temp" && mv "$CONFIG_DIR/temp" "$HISTORY_FILE"
+    # Keep only MAX_HISTORY entries
+    head -n "$MAX_HISTORY" "$HISTORY_FILE" > "$CONFIG_DIR/temp" && mv "$CONFIG_DIR/temp" "$HISTORY_FILE"
+}
 
-exit 0
+# Set wallpaper function
+set_wallpaper() {
+    local wallpaper_path="$1"
+    
+    if [ -f "$wallpaper_path" ]; then
+        feh --no-fehbg --bg-fill "$wallpaper_path"
+        local wallpaper_name=$(basename "$wallpaper_path")
+        add_to_history "$wallpaper_path"
+        show_notification "Wallpaper '$wallpaper_name' set successfully!"
+        exit 0
+    else
+        show_error "Invalid wallpaper: $wallpaper_path"
+    fi
+}
+
+# Main function
+main() {
+    check_dependencies
+    
+    # Check if the wallpaper directory exists and has images
+    if [ ! -d "$WALLPAPER_DIR" ]; then
+        show_error "Wallpaper directory not found: $WALLPAPER_DIR"
+    fi
+    
+    # Find all image files (supports various image formats)
+    mapfile -t wallpapers < <(find "$WALLPAPER_DIR" -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.gif" -o -iname "*.bmp" \) | sort)
+    
+    if [ ${#wallpapers[@]} -eq 0 ]; then
+        show_error "No wallpapers found in $WALLPAPER_DIR"
+    fi
+    
+    # Add recently used wallpapers to the list
+    if [ -f "$HISTORY_FILE" ] && [ -s "$HISTORY_FILE" ]; then
+        mapfile -t recent_wallpapers < "$HISTORY_FILE"
+        rofi_list="== Recent Wallpapers ==\n"
+        for paper in "${recent_wallpapers[@]}"; do
+            if [ -f "$paper" ]; then
+                rofi_list+="$(basename "$paper") (Recent)\n"
+            fi
+        done
+        rofi_list+="== All Wallpapers ==\n"
+    fi
+    
+    # Prepare the list for rofi
+    for paper in "${wallpapers[@]}"; do
+        rofi_list+="$(basename "$paper")\n"
+    done
+    
+    # Use rofi to select a wallpaper with custom theme if available
+    local theme_option=""
+    if [ -f "$ROFI_THEME" ]; then
+        theme_option="-theme $ROFI_THEME"
+    fi
+    
+    # Execute rofi with image preview if possible
+    if command -v ueberzug &>/dev/null && [ "$(rofi -help | grep -c 'image-preview')" -gt 0 ]; then
+        selected=$(echo -e "${rofi_list}" | rofi -dmenu -i -p "Select Wallpaper" \
+            -image-preview-source "$WALLPAPER_DIR" \
+            -image-preview true \
+            -markup-rows $theme_option)
+    else
+        selected=$(echo -e "${rofi_list}" | rofi -dmenu -i -p "Select Wallpaper" $theme_option)
+    fi
+    
+    # Exit if no selection was made
+    if [ -z "$selected" ]; then
+        show_notification "No wallpaper selected"
+        exit 0
+    fi
+    
+    # Handle headers and recent tags
+    if [[ "$selected" == "== "* ]]; then
+        show_notification "Please select a wallpaper, not a header"
+        exit 0
+    fi
+    
+    # Extract actual filename from selection
+    selected_name=$(echo "$selected" | sed 's/ (Recent)$//')
+    
+    # Check if it's a recent wallpaper
+    if [[ "$selected" == *"(Recent)" ]]; then
+        for paper in "${recent_wallpapers[@]}"; do
+            if [[ "$(basename "$paper")" == "$selected_name" ]]; then
+                set_wallpaper "$paper"
+                break
+            fi
+        done
+    else
+        # Find the full path of the selected wallpaper
+        for paper in "${wallpapers[@]}"; do
+            if [[ "$(basename "$paper")" == "$selected_name" ]]; then
+                set_wallpaper "$paper"
+                break
+            fi
+        done
+    fi
+    
+    # If we get here, the wallpaper wasn't found
+    show_error "Failed to locate the selected wallpaper: $selected_name"
+}
+
+# Run main function
+main
