@@ -1,58 +1,284 @@
 #!/bin/bash
 
-# Directory where music files are stored
-MUSIC_DIR="$HOME/Music"
+# Enhanced Music Player Script
+# Features:
+# - Improved performance with caching
+# - Better error handling and user feedback
+# - Visual notifications using notify-send
+# - Support for playlists and shuffle mode
+# - Volume control and currently playing display
 
-# Check if the Music directory exists
-if [ ! -d "$MUSIC_DIR" ]; then
-    echo "Music directory not found: $MUSIC_DIR"
-    exit 1
+# Configuration
+MUSIC_DIR="$HOME/Music"
+CACHE_FILE="/tmp/music_player_cache"
+CONFIG_DIR="$HOME/.config/music_player"
+HISTORY_FILE="$CONFIG_DIR/history"
+VOLUME_FILE="$CONFIG_DIR/volume"
+CURRENT_FILE="$CONFIG_DIR/current"
+
+# Create config directory if it doesn't exist
+mkdir -p "$CONFIG_DIR"
+
+# Set default volume if not already set
+if [ ! -f "$VOLUME_FILE" ]; then
+    echo "50" > "$VOLUME_FILE"
 fi
 
-# Function to extract basename (filename without path and extension)
+# Initialize volume from file
+VOLUME=$(cat "$VOLUME_FILE")
+
+# Colors for terminal output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Function to show notifications
+show_notification() {
+    message="$1"
+    title="$2"
+    
+    if command -v notify-send &> /dev/null; then
+        notify-send -i audio-x-generic "$title" "$message"
+    fi
+    
+    echo -e "${GREEN}$title${NC}: $message"
+}
+
+# Function to extract clean name (filename without path and extension)
 get_clean_name() {
     filename="$1"
-    # Use basename to get filename without path, then remove file extension
     basename "$(basename "$filename" | sed 's/\.[^.]*$//')"
 }
 
-# Function to play music using ffplay for audio playback
+# Function to play music with volume control
 play_music() {
     selected_file="$1"
-    echo "Playing: $(get_clean_name "$selected_file")"
-    nohup ffplay -nodisp -autoexit -loglevel panic "$selected_file" >/dev/null 2>&1 &
+    clean_name=$(get_clean_name "$selected_file")
+    
+    # Kill any existing music player
+    pkill -f "ffplay -nodisp -autoexit -volume"
+    
+    # Save currently playing file
+    echo "$selected_file" > "$CURRENT_FILE"
+    
+    # Add to history
+    echo "$selected_file" >> "$HISTORY_FILE"
+    
+    # Show what's playing
+    show_notification "$clean_name" "Now Playing"
+    
+    # Play the file with the current volume
+    nohup ffplay -nodisp -autoexit -loglevel panic -volume "$VOLUME" "$selected_file" >/dev/null 2>&1 &
+    
+    # Save PID for later reference
+    echo $! > "/tmp/music_player_pid"
 }
 
-# Use rofi to present start or stop options
-action=$(echo -e "Start music\nStop music" | rofi -dmenu -i -p "Choose action: ")
-
-# Based on the chosen action, either start or stop the music
-if [ "$action" = "Start music" ]; then
-    # List all music files in the directory (supporting common lossless formats)
-    music_files=$(find "$MUSIC_DIR" -type f \( -name "*.mp3" -o -name "*.wav" -o -name "*.ogg" -o -name "*.flac" \))
-
-    # Check if there are no music files
-    if [ -z "$music_files" ]; then
-        echo "No music files found in $MUSIC_DIR"
+# Function to refresh the music file cache
+refresh_cache() {
+    find "$MUSIC_DIR" -type f \( -name "*.mp3" -o -name "*.wav" -o -name "*.ogg" -o -name "*.flac" -o -name "*.m4a" -o -name "*.opus" \) > "$CACHE_FILE"
+    
+    if [ ! -s "$CACHE_FILE" ]; then
+        show_notification "No music files found in $MUSIC_DIR" "Error"
         exit 1
     fi
+}
 
-    # Use rofi to select a music file to play (clean names without path or extension)
-    selected=$(echo "$music_files" | while read -r file; do get_clean_name "$file"; done | rofi -dmenu -i -p "Select a song: ")
-
-    # Find the full path of the selected music file based on its clean name
-    selected_file=$(echo "$music_files" | grep "$(echo "$selected" | sed 's/[][\.^$*+?(){}|]/\\&/g')")
-
-    # If user selects a file, play it using ffplay in the background
-    if [ -n "$selected_file" ]; then
-        play_music "$selected_file"
-    else
-        echo "Error: Selected file not found."
-        exit 1
-    fi
-elif [ "$action" = "Stop music" ]; then
-    # Stop any existing ffplay process playing music
-    pkill -f "ffplay -nodisp -autoexit -loglevel panic"
+# Check if Music directory exists
+if [ ! -d "$MUSIC_DIR" ]; then
+    show_notification "Music directory not found: $MUSIC_DIR" "Error"
+    exit 1
 fi
+
+# Main menu
+main_menu() {
+    echo -e "Play\nShuffle\nPlaylists\nNow Playing\nVolume Control\nStop\nRefresh Library\nQuit" | \
+    rofi -dmenu -i -p "Music Player" -theme-str 'window {width: 20%;} listview {lines: 8;}' -config ~/.config/rofi/music.rasi 2>/dev/null || \
+    rofi -dmenu -i -p "Music Player"
+}
+
+# Create or update cache file if needed
+if [ ! -f "$CACHE_FILE" ] || [ "$(find "$MUSIC_DIR" -type f -newer "$CACHE_FILE" | wc -l)" -gt 0 ]; then
+    refresh_cache
+fi
+
+# Get user action
+action=$(main_menu)
+
+case "$action" in
+    "Play")
+        # Check if cache exists and has content
+        if [ ! -s "$CACHE_FILE" ]; then
+            refresh_cache
+        fi
+        
+        # Get clean names for display
+        clean_names=$(while read -r file; do get_clean_name "$file"; done < "$CACHE_FILE")
+        
+        # Use rofi to select a music file
+        selected=$(echo "$clean_names" | rofi -dmenu -i -p "Select a song:" -theme-str 'window {width: 35%;}' 2>/dev/null || echo "")
+        
+        if [ -n "$selected" ]; then
+            # Find the full path by clean name
+            selected_pattern=$(echo "$selected" | sed 's/[][\.^$*+?(){}|]/\\&/g')
+            selected_file=$(grep -F "/$selected_pattern." "$CACHE_FILE" | head -1)
+            
+            if [ -n "$selected_file" ] && [ -f "$selected_file" ]; then
+                play_music "$selected_file"
+            else
+                show_notification "Selected file not found" "Error"
+            fi
+        fi
+        ;;
+        
+    "Shuffle")
+        # Get random file from cache
+        if [ -s "$CACHE_FILE" ]; then
+            random_file=$(shuf -n 1 "$CACHE_FILE")
+            if [ -f "$random_file" ]; then
+                play_music "$random_file"
+            else
+                show_notification "Selected file not found. Refreshing cache..." "Error"
+                refresh_cache
+                random_file=$(shuf -n 1 "$CACHE_FILE")
+                play_music "$random_file"
+            fi
+        else
+            refresh_cache
+            random_file=$(shuf -n 1 "$CACHE_FILE")
+            play_music "$random_file"
+        fi
+        ;;
+        
+    "Playlists")
+        # List all playlists in the config directory
+        playlists=$(find "$CONFIG_DIR" -name "playlist_*" -type f | sed 's/.*playlist_//')
+        
+        if [ -z "$playlists" ]; then
+            playlist_action=$(echo -e "Create New Playlist\nBack" | rofi -dmenu -i -p "No playlists found:")
+        else
+            playlist_action=$(echo -e "$playlists\nCreate New Playlist\nBack" | rofi -dmenu -i -p "Select playlist:")
+        fi
+        
+        if [ "$playlist_action" = "Create New Playlist" ]; then
+            playlist_name=$(rofi -dmenu -p "Enter playlist name:")
+            
+            if [ -n "$playlist_name" ]; then
+                touch "$CONFIG_DIR/playlist_$playlist_name"
+                
+                # Select multiple songs for the playlist
+                while read -r file; do get_clean_name "$file"; done < "$CACHE_FILE" | \
+                rofi -dmenu -i -multi-select -p "Select songs for playlist:" | \
+                while read -r selected; do
+                    selected_pattern=$(echo "$selected" | sed 's/[][\.^$*+?(){}|]/\\&/g')
+                    selected_file=$(grep -F "/$selected_pattern." "$CACHE_FILE" | head -1)
+                    [ -n "$selected_file" ] && echo "$selected_file" >> "$CONFIG_DIR/playlist_$playlist_name"
+                done
+                
+                show_notification "Playlist '$playlist_name' created" "Success"
+            fi
+        elif [ "$playlist_action" != "Back" ] && [ -n "$playlist_action" ]; then
+            # Play the selected playlist
+            if [ -f "$CONFIG_DIR/playlist_$playlist_action" ]; then
+                playlist_song=$(while read -r file; do get_clean_name "$file"; done < "$CONFIG_DIR/playlist_$playlist_action" | \
+                                rofi -dmenu -i -p "Select song from playlist:")
+                
+                if [ -n "$playlist_song" ]; then
+                    playlist_song_pattern=$(echo "$playlist_song" | sed 's/[][\.^$*+?(){}|]/\\&/g')
+                    playlist_song_file=$(grep -F "/$playlist_song_pattern." "$CONFIG_DIR/playlist_$playlist_action" | head -1)
+                    
+                    if [ -n "$playlist_song_file" ] && [ -f "$playlist_song_file" ]; then
+                        play_music "$playlist_song_file"
+                    else
+                        show_notification "Selected file not found" "Error"
+                    fi
+                fi
+            fi
+        fi
+        ;;
+        
+    "Now Playing")
+        if [ -f "$CURRENT_FILE" ] && [ -s "$CURRENT_FILE" ]; then
+            current=$(cat "$CURRENT_FILE")
+            if [ -f "$current" ]; then
+                clean_name=$(get_clean_name "$current")
+                show_notification "$clean_name" "Currently Playing"
+            else
+                show_notification "No music is currently playing" "Info"
+            fi
+        else
+            show_notification "No music is currently playing" "Info"
+        fi
+        ;;
+        
+    "Volume Control")
+        # Display volume control options
+        volume_action=$(echo -e "Increase (Current: $VOLUME%)\nDecrease (Current: $VOLUME%)\nSet Specific\nMute\nMax" | \
+                        rofi -dmenu -i -p "Volume Control:")
+        
+        case "$volume_action" in
+            "Increase"*)
+                VOLUME=$((VOLUME + 10))
+                [ "$VOLUME" -gt 100 ] && VOLUME=100
+                ;;
+            "Decrease"*)
+                VOLUME=$((VOLUME - 10))
+                [ "$VOLUME" -lt 0 ] && VOLUME=0
+                ;;
+            "Set Specific")
+                new_volume=$(rofi -dmenu -p "Enter volume (0-100):")
+                if [[ "$new_volume" =~ ^[0-9]+$ ]] && [ "$new_volume" -ge 0 ] && [ "$new_volume" -le 100 ]; then
+                    VOLUME=$new_volume
+                else
+                    show_notification "Invalid volume value" "Error"
+                fi
+                ;;
+            "Mute")
+                VOLUME=0
+                ;;
+            "Max")
+                VOLUME=100
+                ;;
+        esac
+        
+        # Save the new volume
+        echo "$VOLUME" > "$VOLUME_FILE"
+        
+        # Update volume for the current playback if any
+        if [ -f "/tmp/music_player_pid" ] && [ -s "/tmp/music_player_pid" ]; then
+            pid=$(cat "/tmp/music_player_pid")
+            if ps -p "$pid" > /dev/null; then
+                # If music is playing, restart with new volume
+                if [ -f "$CURRENT_FILE" ] && [ -s "$CURRENT_FILE" ]; then
+                    current=$(cat "$CURRENT_FILE")
+                    if [ -f "$current" ]; then
+                        play_music "$current"
+                    fi
+                fi
+            fi
+        fi
+        
+        show_notification "Volume set to $VOLUME%" "Volume"
+        ;;
+        
+    "Stop")
+        pkill -f "ffplay -nodisp -autoexit"
+        rm -f "/tmp/music_player_pid"
+        > "$CURRENT_FILE"
+        show_notification "Music stopped" "Player Status"
+        ;;
+        
+    "Refresh Library")
+        show_notification "Refreshing music library..." "Info"
+        refresh_cache
+        show_notification "Music library refreshed" "Success"
+        ;;
+        
+    "Quit")
+        exit 0
+        ;;
+esac
 
 exit 0
