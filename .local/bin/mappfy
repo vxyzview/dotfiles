@@ -1,86 +1,277 @@
 #!/bin/bash
-# shellcheck disable=SC2199
-# shellcheck disable=SC2086
-# shellcheck source=/dev/null
 #
-# Copyright (C) 2024-02 pyranix <pyranix@proton.me>
+# mappfy - Desktop Entry Modifier
+# A script to modify .desktop files by adding prefixes to Exec commands
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 
-# Define the directory containing .desktop files
-desktop_dir="/usr/share/applications"
+set -e  # Exit on error
 
-# Use rofi to show the manual
-rofi -show information -e "This script allows you to add an additional command to the 'Exec' line in selected '.desktop' files within the specified directory.
+# Define colors for better output
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+RED='\033[0;31m'
+YELLOW='\033[0;33m'
+NC='\033[0m' # No Color
 
-Options:
-1. dbus-launch
-2. dbus-run-session
-3. Write your custom command
+# Define the directories containing .desktop files
+DESKTOP_DIRS=(
+    "/usr/share/applications"
+    "$HOME/.local/share/applications"
+)
 
-Usage:
-mappfy"
-
-# Get a list of all .desktop files in the specified directory
-desktop_files=("$desktop_dir"/*.desktop)
-
-# Check if there are any .desktop files
-if [ ${#desktop_files[@]} -eq 0 ]; then
-    echo "No .desktop files found in $desktop_dir. Exiting."
+# Function to show an error notification and exit
+show_error() {
+    dunstify -u critical "Desktop Modifier Error" "$1"
+    echo -e "${RED}Error: $1${NC}" >&2
     exit 1
-fi
+}
 
-# Use rofi to get user input for the additional command
-selected_option=$(echo -e "dbus-launch\ndbus-run-session\nWrite your custom command" | rofi -dmenu -p "Select an additional cmd or write manual the cmd:")
+# Function to show a success notification
+show_success() {
+    dunstify -u normal "Desktop Modifier" "$1"
+    echo -e "${GREEN}Success: $1${NC}"
+}
 
-# Define the additional command based on the user's selection
-case "$selected_option" in
-    "dbus-launch")
-        additional_command="dbus-launch"
-        ;;
-    "dbus-run-session")
-        additional_command="dbus-run-session"
-        ;;
-    "Write your custom command")
-        read -p "Enter your custom command: " additional_command
-        ;;
-    *)
-        echo "Invalid option. Exiting."
-        exit 1
-        ;;
-esac
+# Function to show an info notification
+show_info() {
+    dunstify -u low "Desktop Modifier" "$1"
+    echo -e "${BLUE}Info: $1${NC}"
+}
 
-# Use rofi to get user input for selecting applications
-selected_apps=$(printf "%s\n" "${desktop_files[@]##*/}" | rofi -dmenu -p "Select applications to modify:" -multi-select)
+# Show help message in rofi
+show_help() {
+    rofi -theme-str 'window {width: 50%;}' -no-config -show information -e "
 
-# Check if the user selected any applications
-if [ -n "$selected_apps" ]; then
-    # Loop through selected applications and modify their Exec line
-    for selected_app in $selected_apps; do
-        desktop_file="$desktop_dir/$selected_app"
-        # Check if the file exists
-        if [ -e "$desktop_file" ]; then
-            # Check if Exec line exists, if not add it, otherwise insert the new command at the beginning
-            if grep -q "^Exec=" "$desktop_file"; then
-                sed -i "s|^Exec=|Exec=$additional_command |" "$desktop_file"
-            else
-                echo "Exec=$additional_command" >> "$desktop_file"
-            fi
-            dunstify "Additional command added to $desktop_file"
+${BLUE}Desktop Entry Modifier${NC}
+
+This tool allows you to add command prefixes to the 'Exec' lines in .desktop files.
+
+${YELLOW}Common Use Cases:${NC}
+• Add 'dbus-launch' to fix apps missing D-Bus environment
+• Add 'dbus-run-session' to isolate D-Bus sessions
+• Add environment variables for specific applications
+• Add 'env XDG_CURRENT_DESKTOP=GNOME' to force GNOME integration
+• Add wrapper scripts like firejail or apparmor
+
+${YELLOW}Available Options:${NC}
+• Select from common prefixes
+• Specify your own custom prefix
+• Select multiple applications to modify
+• View and backup .desktop files before modification
+
+${YELLOW}Created .desktop files can be found in:${NC}
+$HOME/.local/share/applications
+"
+}
+
+# Check if required dependencies are installed
+check_dependencies() {
+    local missing_deps=()
+    
+    for cmd in rofi dunstify sed grep; do
+        if ! command -v "$cmd" &> /dev/null; then
+            missing_deps+=("$cmd")
         fi
     done
+    
+    if [ ${#missing_deps[@]} -gt 0 ]; then
+        error_msg="Missing dependencies: ${missing_deps[*]}"
+        echo -e "${RED}$error_msg${NC}" >&2
+        
+        # Try to use notify-send if dunstify is not available
+        if command -v notify-send &> /dev/null; then
+            notify-send -u critical "Desktop Modifier Error" "$error_msg"
+        fi
+        
+        exit 1
+    fi
+}
 
-    dunstify "Additional command added successfully."
-else
-    dunstify "No applications selected. Exiting."
-fi
+# Collect all .desktop files from specified directories
+collect_desktop_files() {
+    local all_files=()
+    
+    for dir in "${DESKTOP_DIRS[@]}"; do
+        if [ -d "$dir" ]; then
+            while IFS= read -r file; do
+                # Extract the basename for display
+                local basename=$(basename "$file")
+                # Store full path and basename as "path|basename"
+                all_files+=("$file|$basename")
+            done < <(find "$dir" -name "*.desktop" -type f 2>/dev/null)
+        fi
+    done
+    
+    if [ ${#all_files[@]} -eq 0 ]; then
+        show_error "No .desktop files found in the specified directories."
+    fi
+    
+    echo "${all_files[@]}"
+}
+
+# Show menu for command selection
+select_command() {
+    local common_cmds=(
+        "dbus-launch"
+        "dbus-run-session"
+        "env XDG_CURRENT_DESKTOP=GNOME"
+        "env GTK_THEME=Adwaita:dark"
+        "env QT_QPA_PLATFORMTHEME=qt5ct"
+        "firejail"
+        "flatpak run"
+        "Custom command..."
+    )
+    
+    local selected_cmd=$(printf "%s\n" "${common_cmds[@]}" | \
+        rofi -dmenu -i -p "Select prefix command:" -no-custom)
+    
+    if [ "$selected_cmd" = "Custom command..." ]; then
+        selected_cmd=$(rofi -dmenu -p "Enter custom command prefix:" -lines 0)
+    fi
+    
+    if [ -z "$selected_cmd" ]; then
+        show_info "No command selected. Exiting."
+        exit 0
+    fi
+    
+    echo "$selected_cmd"
+}
+
+# Format desktop files for display in rofi
+format_desktop_files_for_rofi() {
+    local desktop_files=("$@")
+    local formatted_list=""
+    
+    for file_entry in "${desktop_files[@]}"; do
+        # Split the entry into path and basename
+        local path="${file_entry%|*}"
+        local basename="${file_entry#*|}"
+        
+        # Try to extract name from the .desktop file
+        local display_name=$(grep -m 1 "^Name=" "$path" | cut -d= -f2-)
+        
+        if [ -z "$display_name" ]; then
+            display_name="$basename"
+        fi
+        
+        # Add entry to the list
+        formatted_list+="$display_name|$path|$basename"$'\n'
+    done
+    
+    # Remove trailing newline
+    formatted_list=${formatted_list%$'\n'}
+    
+    echo "$formatted_list"
+}
+
+# Select applications to modify
+select_applications() {
+    local desktop_files=("$@")
+    local formatted_list=$(format_desktop_files_for_rofi "${desktop_files[@]}")
+    
+    local selected=$(echo -e "$formatted_list" | \
+        rofi -dmenu -i -multi-select -p "Select applications to modify:" \
+        -format 'i' -theme-str 'window {width: 70%;}')
+    
+    if [ -z "$selected" ]; then
+        show_info "No applications selected. Exiting."
+        exit 0
+    fi
+    
+    # Convert selected indices back to file paths
+    local selected_paths=()
+    local IFS=$'\n'
+    for idx in $selected; do
+        local entry=$(echo -e "$formatted_list" | sed -n "$((idx+1))p")
+        local path=$(echo "$entry" | cut -d'|' -f2)
+        selected_paths+=("$path")
+    done
+    
+    echo "${selected_paths[@]}"
+}
+
+# Modify .desktop files
+modify_desktop_files() {
+    local cmd="$1"
+    shift
+    local files=("$@")
+    local modified_count=0
+    local backup_dir="$HOME/.local/share/mappfy/backups/$(date +%Y%m%d%H%M%S)"
+    local user_dir="$HOME/.local/share/applications"
+    
+    # Create backup directory
+    mkdir -p "$backup_dir"
+    
+    for file in "${files[@]}"; do
+        local basename=$(basename "$file")
+        local target_file
+        
+        # Create directory if it doesn't exist
+        mkdir -p "$user_dir"
+        
+        # Make a backup
+        cp "$file" "$backup_dir/$basename"
+        
+        # If the file is in /usr, create a copy in user directory
+        if [[ "$file" == /usr/* ]]; then
+            target_file="$user_dir/$basename"
+            cp "$file" "$target_file"
+        else
+            target_file="$file"
+        fi
+        
+        # Check if Exec line exists
+        if grep -q "^Exec=" "$target_file"; then
+            # Check if command is already present to avoid duplication
+            local exec_line=$(grep "^Exec=" "$target_file")
+            if [[ "$exec_line" != *"$cmd"* ]]; then
+                # Modify the Exec line
+                sed -i "s|^Exec=|Exec=$cmd |" "$target_file"
+                modified_count=$((modified_count + 1))
+                show_info "Modified: $basename"
+            else
+                show_info "Skipped (already has prefix): $basename"
+            fi
+        else
+            # If no Exec line, add one (though this is unlikely)
+            echo "Exec=$cmd" >> "$target_file"
+            modified_count=$((modified_count + 1))
+            show_info "Added Exec line to: $basename"
+        fi
+    done
+    
+    if [ $modified_count -gt 0 ]; then
+        show_success "Modified $modified_count desktop entries. Backups saved to $backup_dir"
+    else
+        show_info "No desktop entries were modified."
+    fi
+}
+
+# Main function
+main() {
+    # Check dependencies
+    check_dependencies
+    
+    # Show help on first argument
+    if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+        show_help
+        exit 0
+    fi
+    
+    # Collect desktop files
+    IFS=' ' read -r -a desktop_files <<< "$(collect_desktop_files)"
+    
+    # Select command
+    local cmd=$(select_command)
+    
+    # Select applications
+    IFS=' ' read -r -a selected_apps <<< "$(select_applications "${desktop_files[@]}")"
+    
+    # Modify the selected applications
+    if [ ${#selected_apps[@]} -gt 0 ]; then
+        modify_desktop_files "$cmd" "${selected_apps[@]}"
+    fi
+}
+
+# Run the main function
+main "$@"
