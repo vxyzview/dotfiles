@@ -1,74 +1,96 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2199
-# shellcheck disable=SC2086
-# shellcheck source=/dev/null
 #
-# Copyright (C) 2024-02 pyranix <pyranix@proton.me>
+# Modern and optimized xinitrc for X11 session management
+# Last updated: May 2025
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 
 # Source environment variables
-. "$HOME/.envvars"
+[ -f "$HOME/.envvars" ] && source "$HOME/.envvars"
 
-# Init DIR
-DIR="$HOME/.config"
+# Define configuration directory
+CONFIG_DIR="$HOME/.config"
+
+# Log file for debugging
+LOG_FILE="$HOME/.xinitrc.log"
+exec > >(tee -a "$LOG_FILE") 2>&1
+echo "Starting X session $(date)"
 
 # Function to run commands if not already running
 run() {
-  if ! pgrep -f "$1" &>/dev/null; then
+  local process_name="${1##*/}"
+  if ! pgrep -f "$process_name" &>/dev/null; then
+    echo "Starting: $*"
     "$@" &
+  else
+    echo "Already running: $process_name"
   fi
 }
 
-# Main System
-if [ -d /etc/X11/xinit/xinitrc.d ]; then
-  for f in /etc/X11/xinit/xinitrc.d/?*.sh; do
-    if [ -x "$f" ]; then
-      . "$f"
-    fi
-  done
-fi
-
-# Kill already running processes
-for _prs in xsettingsd dunst ksuperkey; do
-  pid=$(pidof $_prs)
+# Function to kill processes
+kill_process() {
+  local pid
+  pid=$(pidof "$1" 2>/dev/null)
   if [ -n "$pid" ]; then
+    echo "Killing: $1 (PID: $pid)"
     kill -9 "$pid"
   fi
-done
+}
 
-# polkit agent
-if ! pidof xfce-polkit &>/dev/null; then
-  run /usr/lib/xfce-polkit/xfce-polkit
+# Source X11 system scripts
+if [ -d /etc/X11/xinit/xinitrc.d ]; then
+  for script in /etc/X11/xinit/xinitrc.d/?*.sh; do
+    if [ -x "$script" ]; then
+      echo "Sourcing: $script"
+      source "$script"
+    fi
+  done
+  unset script
 fi
 
-# Make dbus
+# Kill already running processes that will be restarted
+for process in xsettingsd dunst ksuperkey; do
+  kill_process "$process"
+done
+
+# Initialize dbus if needed
 if command -v dbus-launch >/dev/null && [ -z "$DBUS_SESSION_BUS_ADDRESS" ]; then
+  echo "Initializing D-Bus session"
   eval "$(dbus-launch --sh-syntax --exit-with-session)"
 fi
 
-# Load .profile
-if [ -f ~/.profile ]; then
-  . ~/.profile
+# Source user profile
+[ -f "$HOME/.profile" ] && source "$HOME/.profile"
+
+# Start polkit agent
+if ! pidof xfce-polkit &>/dev/null && [ -x /usr/lib/xfce-polkit/xfce-polkit ]; then
+  run /usr/lib/xfce-polkit/xfce-polkit
 fi
 
-# Run processes
-run ~/.fehbg
-# run pipewire
-run nm-applet
-run xfsettingsd
-run blueman-applet
-run powertop --auto-tune
+# Set up desktop environment
+echo "Setting up desktop environment"
+
+# Background and cursor
+[ -f "$HOME/.fehbg" ] && run "$HOME/.fehbg"
 run xsetroot -cursor_name left_ptr
-run picom --config "$DIR/picom.conf" --daemon
-run xsettingsd --config="$DIR/xsettingsd/xsettingsd.conf"
+
+# System services and applets
+services=(
+  "nm-applet"                                         # Network Manager
+  "xfsettingsd"                                       # XFCE Settings Daemon
+  "blueman-applet"                                    # Bluetooth Manager
+  "powertop --auto-tune"                              # Power Optimization
+  "picom --config '$CONFIG_DIR/picom.conf' --daemon"  # Compositor
+  "xsettingsd --config='$CONFIG_DIR/xsettingsd/xsettingsd.conf'" # X Settings
+)
+
+# Launch services in parallel
+for service in "${services[@]}"; do
+  eval "run $service"
+done
+
+# Optional services (uncomment to enable)
+# run /usr/lib/kdeconnectd                            # KDE Connect
+# run clipmenud                                       # Clipboard Manager
+# run redshift -l "$(curl -s "https://location.services.mozilla.com/v1/geolocate?key=geoclue" | jq -r '.location.lat, .location.lng' | tr '\n' ':' | sed 's/:$//')" # Auto location-based screen temperature
+
+echo "X initialization complete"
