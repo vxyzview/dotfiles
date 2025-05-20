@@ -1,35 +1,164 @@
 #!/bin/bash
+#
+# FastDL - Enhanced Download Script
+# Version: 2.0
+#
 
-# Check if xclip is installed
-if ! command -v xclip &> /dev/null; then
-    echo "xclip is not installed. Please install it and try again."
-    exit 1
-fi
+set -e  # Exit on error
 
-# Check if a URL is provided as an argument
-if [ -z "$1" ]; then
-  # If no URL is provided, try to get it from the clipboard
-  URL=$(xclip -o -selection clipboard)
+# Terminal colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+BOLD='\033[1m'
+NC='\033[0m' # No Color
+
+# Function to display script banner
+show_banner() {
+  echo -e "${BLUE}${BOLD}"
+  echo "╔════════════════════════════════════╗"
+  echo "║           FastDL Script            ║"
+  echo "╚════════════════════════════════════╝${NC}"
+}
+
+# Function to display progress messages
+show_status() {
+  echo -e "${BOLD}${2}${1}${NC}"
+}
+
+# Function to check dependencies
+check_dependencies() {
+  local missing_deps=()
   
-  # Check if the clipboard is empty
-  if [ -z "$URL" ]; then
-    echo "Usage: ./dlscript <url> or copy a URL to the clipboard."
+  for cmd in xclip aria2c; do
+    if ! command -v "$cmd" &> /dev/null; then
+      missing_deps+=("$cmd")
+    fi
+  done
+  
+  if [ ${#missing_deps[@]} -ne 0 ]; then
+    show_status "Missing dependencies: ${missing_deps[*]}" "${RED}"
+    
+    if [[ " ${missing_deps[*]} " =~ " xclip " ]]; then
+      echo "Install xclip with: sudo pacman -S xclip"
+    else
+      echo "Install xclip with: sudo xbps-install -S xclip"
+    fi
+    
+    if [[ " ${missing_deps[*]} " =~ " aria2c " ]]; then
+      echo "Install xclip with: sudo pacman -S xclip"
+    else
+      echo "Install xclip with: sudo xbps-install -S xclip"
+    fi
+    
     exit 1
-  else
-    echo "Using URL from clipboard: $URL"
   fi
-else
-  # If a URL is provided as an argument, use it
-  URL="$1"
-fi
+}
 
-# Optimize aria2c for faster downloads
-# -x16: use up to 16 connections per download
-aria2c -x16 "$URL"
+# Function to validate URL
+validate_url() {
+  local url=$1
+  # Basic URL validation (checks for http/https/ftp prefix)
+  if [[ ! $url =~ ^(https?|ftp)://[-A-Za-z0-9\+&@#/%?=~_|!:,.;]*[-A-Za-z0-9\+&@#/%=~_|]$ ]]; then
+    show_status "Invalid URL format: $url" "${RED}"
+    show_status "URL must start with http://, https://, or ftp://" "${YELLOW}"
+    return 1
+  fi
+  return 0
+}
 
-# Check if the download was successful
-if [ $? -eq 0 ]; then
-  echo "Download completed: $URL"
-else
-  echo "Error downloading: $URL"
-fi
+# Function to get download filename from URL
+get_filename() {
+  local url=$1
+  local filename=$(basename "$url" | sed 's/\?.*//')
+  
+  if [ -z "$filename" ]; then
+    filename="download_$(date +%Y%m%d_%H%M%S)"
+  fi
+  
+  echo "$filename"
+}
+
+# Function to perform the download with aria2c
+download_file() {
+  local url=$1
+  local filename=$(get_filename "$url")
+  
+  show_status "Starting download of: $filename" "${BLUE}"
+  show_status "Source: $url" "${BLUE}"
+  
+  # Create aria2c configuration
+  local aria_opts=(
+    "--file-allocation=none"      # Faster file allocation
+    "-x16"                        # 16 connections per server
+    "-s16"                        # 16 concurrent downloads
+    "-k1M"                        # Piece selection size of 1MB
+    "--summary-interval=5"        # Status summary every 5 seconds
+    "--auto-file-renaming=true"   # Auto rename if file exists
+    "--retry-wait=3"              # Wait 3 seconds between retries
+    "--max-tries=5"               # Maximum retry attempts
+    "--max-connection-per-server=16" # Maximum connections per server
+    "--continue=true"            # Continue previous downloads
+    "--human-readable=true"      # Human-readable output
+    "--download-result=full"     # Show full download results
+    "--console-log-level=notice" # Control logging level
+  )
+  
+  # Add output filename if specified
+  if [ -n "$filename" ]; then
+    aria_opts+=("-o" "$filename")
+  fi
+  
+  # Run the download
+  if aria2c "${aria_opts[@]}" "$url"; then
+    show_status "✓ Download completed successfully!" "${GREEN}"
+    
+    # Show file info
+    local filesize=$(du -h "$filename" | cut -f1)
+    echo -e "${BOLD}File saved: ${BLUE}$(pwd)/$filename ${NC}(${filesize})"
+    return 0
+  else
+    show_status "✗ Download failed!" "${RED}"
+    return 1
+  fi
+}
+
+# Main function
+main() {
+  show_banner
+  check_dependencies
+  
+  # Get URL from argument or clipboard
+  if [ -n "$1" ]; then
+    URL="$1"
+    show_status "Using URL from command line" "${YELLOW}"
+  else
+    URL=$(xclip -o -selection clipboard 2>/dev/null || echo "")
+    
+    if [ -n "$URL" ]; then
+      show_status "Using URL from clipboard" "${YELLOW}"
+    else
+      show_status "No URL provided in arguments or clipboard" "${RED}"
+      echo -e "Usage: ${BOLD}./$(basename $0) <url>${NC} or copy a URL to clipboard"
+      exit 1
+    fi
+  fi
+  
+  echo -e "URL: ${BOLD}$URL${NC}"
+  
+  # Validate URL
+  if ! validate_url "$URL"; then
+    exit 1
+  fi
+  
+  # Download the file
+  if download_file "$URL"; then
+    exit 0
+  else
+    exit 1
+  fi
+}
+
+# Run the main function
+main "$@"
