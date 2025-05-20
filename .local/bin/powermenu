@@ -1,118 +1,250 @@
-#!/bin/bash
-# shellcheck disable=SC2199
-# shellcheck disable=SC2086
-# shellcheck source=/dev/null
+#!/usr/bin/env bash
 #
-# Copyright (C) 2024-02 pyranix <pyranix@proton.me>
+# Enhanced Power Menu Script
+# A stylish and efficient system power management menu using rofi
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 
-SCRIPT_NAME="powermenu"
+# ---- Configuration ----
+SCRIPT_NAME="PowerMenu"
+NOTIFY_TIMEOUT=3000
+ROFI_THEME="${ROFI_THEME:-}"  # Use default or custom theme if specified externally
+ICONS_DIR="${HOME}/.config/powermenu/icons"
+ICON_SIZE="64"
+LOG_FILE="${HOME}/.cache/powermenu.log"
 
-# Power menu options
-options=(" Poweroff" " Reboot" " Sleep" " Hibernate" " Log Out")
+# Create directory structure if it doesn't exist
+mkdir -p "${ICONS_DIR}" "${HOME}/.cache"
 
-# Function to check the init system
-detect_init_system() {
-  if command -v systemctl &> /dev/null; then
-    init_system="systemctl"
-  elif command -v loginctl &> /dev/null; then
-    init_system="loginctl"
+# ---- Functions ----
+
+# Custom logging function
+log_msg() {
+  local level="$1"
+  local message="$2"
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] [${level}] ${message}" >> "${LOG_FILE}"
+}
+
+# Check if command exists and is executable
+cmd_exists() {
+  command -v "$1" &> /dev/null
+}
+
+# Show notification with proper icon and timeout
+show_notification() {
+  local icon="$1"
+  local message="$2"
+  local urgency="${3:-normal}"
+  
+  if cmd_exists notify-send; then
+    notify-send -u "${urgency}" -i "${icon}" "${SCRIPT_NAME}" "${message}" -t "${NOTIFY_TIMEOUT}"
+  elif cmd_exists dunstify; then
+    dunstify -u "${urgency}" -i "${icon}" "${SCRIPT_NAME}" "${message}" -t "${NOTIFY_TIMEOUT}"
   else
-    dunstify -u low "Unable to detect init system. Exiting."
+    # Fallback to console output if no notification daemon is available
+    echo "${message}"
+  fi
+}
+
+# Detect available init system and power management tools
+detect_system() {
+  log_msg "INFO" "Detecting system power management interfaces"
+  
+  # Check for systemd first (most common)
+  if cmd_exists systemctl; then
+    POWER_CMD="systemctl poweroff"
+    REBOOT_CMD="systemctl reboot"
+    SUSPEND_CMD="systemctl suspend"
+    HIBERNATE_CMD="systemctl hibernate"
+    # Check for display manager to determine logout command
+    if pidof sddm &>/dev/null; then
+      LOGOUT_CMD="loginctl terminate-session ${XDG_SESSION_ID-$(loginctl | grep $(whoami) | awk '{print $1}')}"
+    elif pidof lightdm &>/dev/null; then
+      LOGOUT_CMD="loginctl terminate-session ${XDG_SESSION_ID-$(loginctl | grep $(whoami) | awk '{print $1}')}"
+    elif pidof gdm &>/dev/null; then
+      LOGOUT_CMD="gnome-session-quit --logout --force"
+    elif pidof i3 &>/dev/null; then
+      LOGOUT_CMD="i3-msg exit"
+    elif pidof sway &>/dev/null; then
+      LOGOUT_CMD="swaymsg exit"
+    elif pidof bspwm &>/dev/null; then
+      LOGOUT_CMD="bspc quit"
+    elif pidof openbox &>/dev/null; then
+      LOGOUT_CMD="openbox --exit"
+    elif pidof xfce4-session &>/dev/null; then
+      LOGOUT_CMD="xfce4-session-logout --logout"
+    else
+      LOGOUT_CMD="pkill -KILL -u $(whoami)"
+    fi
+    log_msg "INFO" "Using systemd commands for power management"
+    return 0
+  
+  # Check for loginctl as a secondary option
+  elif cmd_exists loginctl; then
+    POWER_CMD="loginctl poweroff"
+    REBOOT_CMD="loginctl reboot"
+    SUSPEND_CMD="loginctl suspend"
+    HIBERNATE_CMD="loginctl hibernate"
+    LOGOUT_CMD="loginctl terminate-session ${XDG_SESSION_ID-$(loginctl | grep $(whoami) | awk '{print $1}')}"
+    log_msg "INFO" "Using loginctl commands for power management"
+    return 0
+    
+  # Check for other system utilities as fallbacks
+  elif cmd_exists shutdown; then
+    POWER_CMD="shutdown -h now"
+    REBOOT_CMD="shutdown -r now"
+    # Handle suspend/hibernate with potential fallbacks
+    if cmd_exists pm-suspend; then
+      SUSPEND_CMD="pm-suspend"
+    elif cmd_exists zzz; then
+      SUSPEND_CMD="zzz"
+    else
+      SUSPEND_CMD=""
+    fi
+    
+    if cmd_exists pm-hibernate; then
+      HIBERNATE_CMD="pm-hibernate"
+    elif cmd_exists ZZZ; then
+      HIBERNATE_CMD="ZZZ"
+    else
+      HIBERNATE_CMD=""
+    fi
+    
+    LOGOUT_CMD="pkill -KILL -u $(whoami)"
+    log_msg "INFO" "Using traditional commands for power management"
+    return 0
+    
+  else
+    log_msg "ERROR" "No supported power management interface found"
+    show_notification "${ICONS_DIR}/error.png" "No supported power management interface found" "critical"
     exit 1
   fi
 }
 
-# Determine init system
-detect_init_system
-
-# Set commands based on init system
-case $init_system in
-  "systemctl")
-    power_command="systemctl poweroff"
-    reboot_command="systemctl reboot"
-    sleep_command="systemctl suspend"
-    hibernate_command="systemctl hibernate"
-    logout_command="systemctl exit"
-    ;;
-  "loginctl")
-    power_command="loginctl poweroff"
-    reboot_command="loginctl reboot"
-    sleep_command="loginctl suspend"
-    hibernate_command="loginctl hibernate"
-    logout_command="loginctl terminate-session"
-    ;;
-  *)
-    dunstify -u low "Unsupported init system. Exiting."
-    exit 1
-    ;;
-esac
-
-# Function to confirm the action
-confirm_option() {
-  confirm=$(echo -e "Yes\nNo" | rofi -dmenu -i -p "Are you sure?" -columns 1 -width 10)
-  [[ "$confirm" == "Yes" ]]
+# Confirm action with a rofi dialog
+confirm_action() {
+  local action="$1"
+  local icon="$2"
+  
+  if ! cmd_exists rofi; then
+    log_msg "ERROR" "rofi is not installed. Cannot display confirmation dialog."
+    show_notification "${ICONS_DIR}/error.png" "rofi not found. Cannot confirm action." "critical"
+    return 1
+  fi
+  
+  # Use a more visually appealing confirmation dialog with icon
+  local result
+  result=$(printf "Yes\nNo" | rofi -dmenu -i -p "Confirm ${action}?" -mesg "Are you sure you want to ${action}?" ${ROFI_THEME:+-theme $ROFI_THEME} -width 20 -lines 2)
+  
+  if [[ "$result" == "Yes" ]]; then
+    log_msg "INFO" "User confirmed action: ${action}"
+    return 0
+  else
+    log_msg "INFO" "User cancelled action: ${action}"
+    show_notification "${ICONS_DIR}/cancel.png" "${action} cancelled" "low"
+    return 1
+  fi
 }
 
-# Main script
+# Execute a power management command
+execute_command() {
+  local cmd="$1"
+  local action="$2"
+  local icon="$3"
+  
+  if [[ -z "$cmd" ]]; then
+    log_msg "ERROR" "Command not available for action: ${action}"
+    show_notification "${ICONS_DIR}/error.png" "${action} is not supported on this system" "critical"
+    return 1
+  fi
+  
+  # Show notification before executing command
+  show_notification "${icon}" "Executing ${action}..." "normal"
+  log_msg "INFO" "Executing command: ${cmd}"
+  
+  # Execute the command and check if it succeeds
+  if eval "${cmd}"; then
+    log_msg "INFO" "Command executed successfully: ${cmd}"
+  else
+    log_msg "ERROR" "Command failed: ${cmd}"
+    show_notification "${ICONS_DIR}/error.png" "Failed to ${action}" "critical"
+    return 1
+  fi
+  
+  return 0
+}
 
-selected_option=$(printf '%s\n' "${options[@]}" | rofi -dmenu -i -p "$SCRIPT_NAME" -columns 1 -width 20) || exit 1
+# Check if all required tools are installed
+check_dependencies() {
+  local missing_deps=()
+  
+  # Check for rofi
+  if ! cmd_exists rofi; then
+    missing_deps+=("rofi")
+  fi
+  
+  # Check for notification daemon
+  if ! cmd_exists notify-send && ! cmd_exists dunstify; then
+    missing_deps+=("notify-send or dunstify")
+  fi
+  
+  if [[ ${#missing_deps[@]} -gt 0 ]]; then
+    echo "Error: Missing dependencies: ${missing_deps[*]}"
+    log_msg "ERROR" "Missing dependencies: ${missing_deps[*]}"
+    exit 1
+  fi
+}
 
-case $selected_option in
-    " Poweroff")
-        if confirm_option; then
-            dunstify -i "$HOME/.notify/images/power-button.png" "Powering off..."
-            $power_command
-        else
-            dunstify -i "$HOME/.notify/images/multiply.png" "Power off canceled"
-        fi
-        ;;
-    " Reboot")
-        if confirm_option; then
-            dunstify -i "$HOME/.notify/images/refresh.png" "Rebooting..."
-            $reboot_command
-        else
-            dunstify -i "$HOME/.notify/images/multiply.png" "Reboot canceled"
-        fi
-        ;;
-    " Sleep")
-        if confirm_option; then
-            dunstify -i "$HOME/.notify/images/sleep.png" "Putting system to sleep..."
-            $sleep_command
-        else
-            dunstify -i "$HOME/.notify/images/multiply.png" "Sleep canceled"
-        fi
-        ;;
-    " Hibernate")
-        if confirm_option; then
-            dunstify -i "$HOME/.notify/images/suspended.png" "Hibernating..."
-            $hibernate_command
-        else
-            dunstify -i "$HOME/.notify/images/multiply.png" "Hibernation canceled"
-        fi
-        ;;
-    " Log Out")
-        if confirm_option; then
-            dunstify -i "$HOME/.notify/images/arrow.png" "Logging out..."
-            $logout_command
-        else
-            dunstify -i "$HOME/.notify/images/multiply.png" "Log out canceled"
-        fi
-        ;;
-    *)
-        dunstify -u low "Invalid option"
-        ;;
-esac
+# ---- Main script ----
+
+# Check dependencies
+check_dependencies
+
+# Detect power management system
+detect_system
+
+# Define menu options with icons
+OPTIONS=(
+  " Poweroff|${ICONS_DIR}/power.png|Poweroff|${POWER_CMD}"
+  " Reboot|${ICONS_DIR}/reboot.png|Reboot|${REBOOT_CMD}"
+  " Suspend|${ICONS_DIR}/sleep.png|Suspend|${SUSPEND_CMD}"
+  " Hibernate|${ICONS_DIR}/hibernate.png|Hibernate|${HIBERNATE_CMD}"
+  " Lock|${ICONS_DIR}/lock.png|Lock|${LOCK_CMD:-i3lock -c 000000}"
+  " Logout|${ICONS_DIR}/logout.png|Logout|${LOGOUT_CMD}"
+)
+
+# Build menu items for rofi
+MENU=""
+for option in "${OPTIONS[@]}"; do
+  IFS="|" read -r label icon_path action cmd <<< "${option}"
+  
+  # Skip options with empty commands
+  [[ -z "$cmd" ]] && continue
+  
+  # Add option to menu
+  MENU+="${label}\n"
+done
+
+# Remove trailing newline
+MENU=${MENU%\\n}
+
+# Launch rofi and get selected option
+SELECTED_OPTION=$(echo -e "${MENU}" | rofi -dmenu -i -p "${SCRIPT_NAME}" ${ROFI_THEME:+-theme $ROFI_THEME} -width 20)
+
+# Exit if nothing selected (user pressed Escape)
+[[ -z "${SELECTED_OPTION}" ]] && exit 0
+
+# Find the selected option details
+for option in "${OPTIONS[@]}"; do
+  IFS="|" read -r label icon_path action cmd <<< "${option}"
+  
+  if [[ "${SELECTED_OPTION}" == "${label}" ]]; then
+    # Confirm action
+    if confirm_action "${action}" "${icon_path}"; then
+      # Execute command
+      execute_command "${cmd}" "${action}" "${icon_path}"
+    fi
+    break
+  fi
+done
 
 exit 0
