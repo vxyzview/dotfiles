@@ -1,55 +1,230 @@
-#!/bin/bash
-# shellcheck disable=SC2199
-# shellcheck disable=SC2086
-# shellcheck source=/dev/null
+#!/usr/bin/env bash
 #
-# Copyright (C) 2024-02 pyranix <pyranix@proton.me>
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# GitHub SSH Setup Script
+# This script automates GitHub SSH key generation and configuration
+# It handles various operating systems and provides helpful error messages
+# 
+
+# Define colors for terminal output
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
+
+# Function for printing colored messages
+print_msg() {
+    local color=$1
+    local message=$2
+    echo -e "${color}${message}${NC}"
+}
+
+# Function to print step headers
+print_step() {
+    echo
+    print_msg "${BLUE}===== $1 =====${NC}"
+}
 
 # Function to read user input with a prompt
 read_input() {
-	read -p "$1: " user_input
-	echo "$user_input"
+    local prompt=$1
+    local default=$2
+    local input
+
+    if [ -n "$default" ]; then
+        read -p "$prompt [$default]: " input
+        echo "${input:-$default}"
+    else
+        while [ -z "$input" ]; do
+            read -p "$prompt: " input
+            if [ -z "$input" ]; then
+                print_msg "${YELLOW}This field cannot be empty. Please try again.${NC}"
+            fi
+        done
+        echo "$input"
+    fi
 }
 
-# Prompt user for GitHub email and name
-github_email=$(read_input "Enter your GitHub email")
-github_name=$(read_input "Enter your GitHub name")
+# Function to check if a command exists
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# Function to copy text to clipboard based on OS
+copy_to_clipboard() {
+    local content=$1
+    
+    if command_exists pbcopy; then
+        # macOS
+        echo "$content" | pbcopy
+        return 0
+    elif command_exists xclip; then
+        # Linux with xclip
+        echo "$content" | xclip -sel clip
+        return 0
+    elif command_exists xsel; then
+        # Linux with xsel
+        echo "$content" | xsel --clipboard
+        return 0
+    elif command_exists clip.exe; then
+        # Windows WSL
+        echo "$content" | clip.exe
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Function to open URL based on OS
+open_url() {
+    local url=$1
+    
+    if command_exists open; then
+        # macOS
+        open "$url"
+        return 0
+    elif command_exists xdg-open; then
+        # Linux
+        xdg-open "$url"
+        return 0
+    elif command_exists wslview; then
+        # Windows WSL
+        wslview "$url"
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Show welcome message
+clear
+print_msg "${GREEN}╔════════════════════════════════════════════╗${NC}"
+print_msg "${GREEN}║       GitHub SSH Key Setup Assistant       ║${NC}"
+print_msg "${GREEN}╚════════════════════════════════════════════╝${NC}"
+echo
+
+# Check for existing GitHub configuration
+print_step "Checking existing GitHub configuration"
+existing_email=$(git config --global user.email || echo "")
+existing_name=$(git config --global user.name || echo "")
+
+if [ -n "$existing_email" ] || [ -n "$existing_name" ]; then
+    print_msg "${YELLOW}Existing GitHub configuration found:${NC}"
+    [ -n "$existing_email" ] && echo "Email: $existing_email"
+    [ -n "$existing_name" ] && echo "Name: $existing_name"
+    
+    update_config=$(read_input "Do you want to update this configuration? (y/n)" "n")
+    if [[ $update_config != "y"* && $update_config != "Y"* ]]; then
+        print_msg "${GREEN}Keeping existing configuration.${NC}"
+        github_email=$existing_email
+        github_name=$existing_name
+    else
+        github_email=$(read_input "Enter your GitHub email" "$existing_email")
+        github_name=$(read_input "Enter your GitHub name" "$existing_name")
+    fi
+else
+    github_email=$(read_input "Enter your GitHub email")
+    github_name=$(read_input "Enter your GitHub name")
+fi
 
 # Set up GitHub configuration
+print_step "Setting up GitHub configuration"
 git config --global user.email "$github_email"
 git config --global user.name "$github_name"
+print_msg "${GREEN}GitHub configuration updated successfully.${NC}"
 
-# Generate SSH key
-echo "Generating SSH key..."
-ssh-keygen -t rsa -b 4096 -C "$github_email"
-echo "SSH key generated."
+# Check for existing SSH keys
+print_step "Checking for existing SSH keys"
+ssh_dir="$HOME/.ssh"
+id_rsa_pub="$ssh_dir/id_rsa.pub"
 
-# Copy SSH key to clipboard if xclip is available
-if command -v xclip >/dev/null 2>&1; then
-	echo "Copying SSH key to clipboard..."
-	xclip -sel clip <~/.ssh/id_rsa.pub
-	echo "SSH key copied to clipboard."
+if [ -f "$id_rsa_pub" ]; then
+    print_msg "${YELLOW}Existing SSH key found at $id_rsa_pub${NC}"
+    use_existing=$(read_input "Do you want to use the existing key? (y/n)" "y")
+    
+    if [[ $use_existing == "y"* || $use_existing == "Y"* ]]; then
+        print_msg "${GREEN}Using existing SSH key.${NC}"
+    else
+        # Generate a custom-named key
+        custom_name=$(read_input "Enter a name for your new SSH key (e.g., github_rsa)" "github_rsa")
+        ssh_key_path="$ssh_dir/${custom_name}"
+        print_msg "${GREEN}Generating new SSH key at $ssh_key_path...${NC}"
+        ssh-keygen -t ed25519 -C "$github_email" -f "$ssh_key_path"
+        id_rsa_pub="${ssh_key_path}.pub"
+        
+        # Add the key to SSH agent
+        print_msg "${YELLOW}Adding key to SSH agent...${NC}"
+        eval "$(ssh-agent -s)"
+        ssh-add "$ssh_key_path"
+    fi
 else
-	echo "xclip is not installed. Please manually copy the SSH key to add to your GitHub account."
+    # Ensure SSH directory exists
+    mkdir -p "$ssh_dir"
+    chmod 700 "$ssh_dir"
+    
+    # Generate SSH key with modern Ed25519 algorithm
+    print_msg "${GREEN}Generating SSH key...${NC}"
+    ssh-keygen -t ed25519 -C "$github_email"
+    
+    # Add the key to SSH agent
+    print_msg "${YELLOW}Adding key to SSH agent...${NC}"
+    eval "$(ssh-agent -s)"
+    ssh-add ~/.ssh/id_ed25519
+    id_rsa_pub="$ssh_dir/id_ed25519.pub"
 fi
 
-# Open GitHub settings page if xdg-open is available
-if command -v xdg-open >/dev/null 2>&1; then
-	echo "Opening GitHub settings page..."
-	xdg-open "https://github.com/settings/keys"
-	echo "Please add the SSH key to your GitHub account."
+# Copy SSH key to clipboard
+print_step "Copying SSH key to clipboard"
+ssh_key_content=$(cat "$id_rsa_pub")
+
+if copy_to_clipboard "$ssh_key_content"; then
+    print_msg "${GREEN}SSH public key copied to clipboard.${NC}"
 else
-	echo "xdg-open is not installed. Please manually open the GitHub settings page and add the SSH key."
+    print_msg "${YELLOW}Could not copy to clipboard automatically. Here's your public key:${NC}"
+    echo
+    print_msg "${BLUE}$ssh_key_content${NC}"
+    echo
+    print_msg "${YELLOW}Please copy it manually.${NC}"
 fi
+
+# Check if config file exists or create a new one
+ssh_config="$ssh_dir/config"
+if [ ! -f "$ssh_config" ]; then
+    print_step "Creating SSH config file"
+    echo "# GitHub SSH configuration" > "$ssh_config"
+    echo "Host github.com" >> "$ssh_config"
+    echo "  User git" >> "$ssh_config"
+    echo "  IdentityFile ~/.ssh/id_ed25519" >> "$ssh_config"
+    echo "  AddKeysToAgent yes" >> "$ssh_config"
+    print_msg "${GREEN}SSH config file created at $ssh_config${NC}"
+fi
+
+# Open GitHub settings page
+print_step "Opening GitHub SSH settings page"
+github_ssh_url="https://github.com/settings/ssh/new"
+
+if open_url "$github_ssh_url"; then
+    print_msg "${GREEN}GitHub SSH settings page opened in your browser.${NC}"
+else
+    print_msg "${YELLOW}Could not open browser automatically. Please manually visit:${NC}"
+    print_msg "${BLUE}$github_ssh_url${NC}"
+fi
+
+# Test the connection
+print_step "Testing GitHub SSH connection"
+echo "After adding your key to GitHub, test your connection by pressing Enter."
+read -p "Press Enter to continue or Ctrl+C to exit..."
+
+ssh -T git@github.com
+
+if [ $? -eq 1 ]; then
+    # Exit code 1 actually means success for the GitHub SSH test
+    print_msg "${GREEN}Success! You have successfully set up SSH for GitHub!${NC}"
+else
+    print_msg "${YELLOW}Connection test gave unexpected result. Please check your SSH setup.${NC}"
+    print_msg "${YELLOW}You might need to manually add your SSH key to your GitHub account.${NC}"
+fi
+
+print_msg "${GREEN}╔════════════════════════════════════════════╗${NC}"
+print_msg "${GREEN}║       GitHub SSH Setup Complete!           ║${NC}"
+print_msg "${GREEN}╚════════════════════════════════════════════╝${NC}"
