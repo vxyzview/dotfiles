@@ -1,107 +1,377 @@
 #!/bin/bash
-#
-# Copyright (C) 2024-02 pyranix <pyranix@proton.me>
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 
-# Constants
+# ---------------------------------------------------------------
+# Enhanced System Control Notification Script
+# Manages volume, brightness with beautiful notifications
+# ---------------------------------------------------------------
+
+# Configuration
 NOTIFY_ID=424242
-STACK_TAG=progress
-ICON_PATH_VOLUME="$HOME/.notify/images/music.png"
-ICON_PATH_MUTE="$HOME/.notify/images/mute.png"
-ICON_PATH_UNMUTE="$HOME/.notify/images/music.png"
-ICON_PATH_BRIGHTNESS="$HOME/.notify/images/smart-bulb.png"
+STACK_TAG="system-controls"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/system-notify"
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/system-notify"
+ICONS_DIR="$CONFIG_DIR/icons"
 
-# Function to show notification using dunst with progress bar
-show_notification() {
-    local title="$1"
-    local message="$2"
-    local current_level=""
-    local icon_path=""
+# Create necessary directories
+mkdir -p "$CONFIG_DIR" "$CACHE_DIR" "$ICONS_DIR"
 
-    case "$title" in
-        "Brightness")
-            current_level=$(get_brightness)
-            icon_path="$ICON_PATH_BRIGHTNESS"
-            ;;
-        *)
-            current_level=$(get_volume)
-            icon_path="$ICON_PATH_VOLUME"
-            ;;
-    esac
+# Icons - Using fallbacks if custom icons don't exist
+ICON_VOLUME="${ICONS_DIR}/volume.png:-/usr/share/icons/Papirus/48x48/status/audio-volume-high.svg}"
+ICON_MUTE="${ICONS_DIR}/mute.png:-/usr/share/icons/Papirus/48x48/status/audio-volume-muted.svg}"
+ICON_BRIGHTNESS="${ICONS_DIR}/brightness.png:-/usr/share/icons/Papirus/48x48/status/display-brightness.svg}"
+ICON_MIC="${ICONS_DIR}/mic.png:-/usr/share/icons/Papirus/48x48/devices/audio-input-microphone.svg}"
+ICON_MIC_MUTE="${ICONS_DIR}/mic-mute.png:-/usr/share/icons/Papirus/48x48/status/microphone-sensitivity-muted.svg}"
 
-    dunstify -u low -i "$icon_path" -r "$NOTIFY_ID" -h int:value:"$current_level" -h string:x-dunst-stacktag:"$STACK_TAG" "$title" "$message Current: $current_level"
+# Colors for notifications
+COLOR_NORMAL="#1e88e5"
+COLOR_MUTED="#e53935"
+COLOR_LOW="#fb8c00"
+
+# Get the appropriate icon path
+get_icon() {
+    local icon_path="$1"
+    
+    # Check if custom icon exists, otherwise use fallback
+    if [[ "$icon_path" == *:-* ]]; then
+        local custom_icon="${icon_path%:-*}"
+        local fallback_icon="${icon_path#*:-}"
+        
+        if [[ -f "$custom_icon" ]]; then
+            echo "$custom_icon"
+        else
+            echo "$fallback_icon"
+        fi
+    else
+        echo "$icon_path"
+    fi
 }
 
-# Function to get current brightness as a percentage of maximum brightness
+# Function to get current brightness as a percentage
 get_brightness() {
-    local current_brightness=$(brightnessctl g)
-    local max_brightness=$(brightnessctl m)
-    
-    # Calculate the brightness percentage
-    local brightness_percentage=$(( (current_brightness * 100) / max_brightness ))
-
-    echo "$brightness_percentage"
+    if command -v brightnessctl &>/dev/null; then
+        local current=$(brightnessctl g)
+        local max=$(brightnessctl m)
+        echo $((current * 100 / max))
+    elif command -v xbacklight &>/dev/null; then
+        xbacklight -get | awk '{print int($1+0.5)}'
+    else
+        echo "Error: No brightness control tool found" >&2
+        exit 1
+    fi
 }
 
 # Function to get current volume
 get_volume() {
-    pactl list sinks | awk '/Volume:/{print $5; exit}'
+    if command -v pactl &>/dev/null; then
+        pactl get-sink-volume @DEFAULT_SINK@ | head -n 1 | awk '{print $5}' | tr -d '%'
+    elif command -v amixer &>/dev/null; then
+        amixer get Master | grep -oP '\[\K[0-9]+(?=%)' | head -n 1
+    else
+        echo "Error: No volume control tool found" >&2
+        exit 1
+    fi
 }
 
-# Function to change screen brightness
+# Function to check if audio is muted
+is_muted() {
+    if command -v pactl &>/dev/null; then
+        pactl get-sink-mute @DEFAULT_SINK@ | grep -q "yes"
+    elif command -v amixer &>/dev/null; then
+        amixer get Master | grep -q "\[off\]"
+    else
+        return 1
+    fi
+}
+
+# Function to check if microphone is muted
+is_mic_muted() {
+    if command -v pactl &>/dev/null; then
+        pactl get-source-mute @DEFAULT_SOURCE@ | grep -q "yes"
+    elif command -v amixer &>/dev/null; then
+        amixer get Capture | grep -q "\[off\]"
+    else
+        return 1
+    fi
+}
+
+# Function to show notification with progress bar
+show_notification() {
+    local title="$1"
+    local message="$2"
+    local level="$3"
+    local icon="$4"
+    local color="$5"
+    
+    # Default color if not specified
+    [[ -z "$color" ]] && color="$COLOR_NORMAL"
+    
+    # Use dunstify if available, otherwise use notify-send
+    if command -v dunstify &>/dev/null; then
+        dunstify -u low \
+                -i "$(get_icon "$icon")" \
+                -r "$NOTIFY_ID" \
+                -h "int:value:$level" \
+                -h "string:x-dunst-stacktag:$STACK_TAG" \
+                -h "string:fgcolor:$color" \
+                "$title" "$message"
+    else
+        notify-send -u low \
+                  -i "$(get_icon "$icon")" \
+                  -h "int:value:$level" \
+                  "$title" "$message"
+    fi
+}
+
+# Function to change brightness
 change_brightness() {
-    brightnessctl s "$1" && show_notification "Brightness" "Now"
+    local action="$1"
+    local value="$2"
+    local current
+    
+    case "$action" in
+        set|s)
+            # Set absolute value
+            if [[ "$value" == *"%" ]]; then
+                # Remove % if present
+                value="${value%\%}"
+            fi
+            
+            if command -v brightnessctl &>/dev/null; then
+                brightnessctl -q s "$value%"
+            elif command -v xbacklight &>/dev/null; then
+                xbacklight -set "$value"
+            fi
+            ;;
+        inc|i|up|+)
+            # Increase by value
+            if [[ "$value" == *"%" ]]; then
+                value="${value%\%}"
+            fi
+            
+            if command -v brightnessctl &>/dev/null; then
+                brightnessctl -q s "+$value%"
+            elif command -v xbacklight &>/dev/null; then
+                xbacklight -inc "$value"
+            fi
+            ;;
+        dec|d|down|-)
+            # Decrease by value
+            if [[ "$value" == *"%" ]]; then
+                value="${value%\%}"
+            fi
+            
+            if command -v brightnessctl &>/dev/null; then
+                brightnessctl -q s "$value%-"
+            elif command -v xbacklight &>/dev/null; then
+                xbacklight -dec "$value"
+            fi
+            ;;
+    esac
+    
+    # Get current brightness after change
+    current=$(get_brightness)
+    
+    # Choose color based on brightness level
+    local color="$COLOR_NORMAL"
+    [[ "$current" -lt 30 ]] && color="$COLOR_LOW"
+    
+    show_notification "Brightness" "" "$current" "$ICON_BRIGHTNESS" "$color"
 }
 
 # Function to change volume
 change_volume() {
-    pactl set-sink-volume @DEFAULT_SINK@ "$1%" && show_notification "Volume" "Now"
-}
-
-# Function to toggle mute/unmute volume
-toggle_mute() {
-    pactl set-sink-mute @DEFAULT_SINK@ toggle
-    local is_muted=$(pactl list sinks | awk '/Mute/{print $2; exit}')
-
-    if [ "$is_muted" = "yes" ]; then
-        show_notification "Control" "Muted" "$ICON_PATH_MUTE"
+    local action="$1"
+    local value="$2"
+    local current
+    
+    case "$action" in
+        set|s)
+            # Set absolute value
+            if [[ "$value" == *"%" ]]; then
+                # Remove % if present
+                value="${value%\%}"
+            fi
+            
+            if command -v pactl &>/dev/null; then
+                pactl set-sink-volume @DEFAULT_SINK@ "$value%"
+            elif command -v amixer &>/dev/null; then
+                amixer -q set Master "$value%"
+            fi
+            ;;
+        inc|i|up|+)
+            # Increase by value
+            if [[ "$value" == *"%" ]]; then
+                value="${value%\%}"
+            fi
+            
+            if command -v pactl &>/dev/null; then
+                pactl set-sink-volume @DEFAULT_SINK@ "+$value%"
+            elif command -v amixer &>/dev/null; then
+                amixer -q set Master "$value%+"
+            fi
+            ;;
+        dec|d|down|-)
+            # Decrease by value
+            if [[ "$value" == *"%" ]]; then
+                value="${value%\%}"
+            fi
+            
+            if command -v pactl &>/dev/null; then
+                pactl set-sink-volume @DEFAULT_SINK@ "-$value%"
+            elif command -v amixer &>/dev/null; then
+                amixer -q set Master "$value%-"
+            fi
+            ;;
+    esac
+    
+    # Unmute if changing volume (common behavior)
+    if [[ "$action" != "toggle" && "$action" != "mute" ]]; then
+        if command -v pactl &>/dev/null; then
+            pactl set-sink-mute @DEFAULT_SINK@ 0
+        elif command -v amixer &>/dev/null; then
+            amixer -q set Master unmute
+        fi
+    fi
+    
+    # Get current volume after change
+    current=$(get_volume)
+    
+    # Show different notification based on mute status
+    if is_muted; then
+        show_notification "Volume" "Muted" "$current" "$ICON_MUTE" "$COLOR_MUTED"
     else
-        show_notification "Control" "Unmuted" "$ICON_PATH_UNMUTE"
+        # Choose color based on volume level
+        local color="$COLOR_NORMAL"
+        [[ "$current" -lt 30 ]] && color="$COLOR_LOW"
+        
+        show_notification "Volume" "" "$current" "$ICON_VOLUME" "$color"
     fi
 }
 
+# Function to toggle mute
+toggle_mute() {
+    if command -v pactl &>/dev/null; then
+        pactl set-sink-mute @DEFAULT_SINK@ toggle
+    elif command -v amixer &>/dev/null; then
+        amixer -q set Master toggle
+    fi
+    
+    local volume=$(get_volume)
+    
+    if is_muted; then
+        show_notification "Volume" "Muted" "$volume" "$ICON_MUTE" "$COLOR_MUTED"
+    else
+        show_notification "Volume" "Unmuted" "$volume" "$ICON_VOLUME" "$COLOR_NORMAL"
+    fi
+}
+
+# Function to toggle microphone mute
+toggle_mic_mute() {
+    if command -v pactl &>/dev/null; then
+        pactl set-source-mute @DEFAULT_SOURCE@ toggle
+    elif command -v amixer &>/dev/null; then
+        amixer -q set Capture toggle
+    fi
+    
+    if is_mic_muted; then
+        show_notification "Microphone" "Muted" "0" "$ICON_MIC_MUTE" "$COLOR_MUTED"
+    else
+        show_notification "Microphone" "Active" "100" "$ICON_MIC" "$COLOR_NORMAL"
+    fi
+}
+
+# Show help
+show_help() {
+    cat << EOF
+Usage: $(basename "$0") [OPTION] [ACTION] [VALUE]
+
+Control system settings with notifications
+
+Options:
+  volume, vol, v     Control audio volume
+  brightness, br, b  Control screen brightness
+  mute, m            Toggle audio mute
+  mic                Toggle microphone mute
+  help, h            Show this help
+
+Actions for volume/brightness:
+  set, s VALUE       Set to specific value (0-100)
+  inc, i, +, up      Increase by VALUE
+  dec, d, -, down    Decrease by VALUE
+  toggle, t          Toggle mute (volume only)
+
+Examples:
+  $(basename "$0") volume set 50     Set volume to 50%
+  $(basename "$0") vol + 5           Increase volume by 5%
+  $(basename "$0") b inc 10          Increase brightness by 10%
+  $(basename "$0") brightness - 5    Decrease brightness by 5%
+  $(basename "$0") mute              Toggle audio mute
+  $(basename "$0") mic               Toggle microphone mute
+EOF
+    exit 0
+}
+
 # Main script
-case "$#" in
-    2)
+case "$1" in
+    volume|vol|v)
+        shift
         case "$1" in
-            brightness)
-                change_brightness "$2"
+            set|s)
+                change_volume "set" "$2"
                 ;;
-            volume)
-                change_volume "$2"
+            inc|i|up|+)
+                change_volume "inc" "${2:-5}"
                 ;;
-            mute)
+            dec|d|down|-)
+                change_volume "dec" "${2:-5}"
+                ;;
+            toggle|t)
                 toggle_mute
                 ;;
             *)
-                echo "Unknown option: $1"
-                exit 1
+                if [[ "$1" =~ ^[0-9]+%?$ ]]; then
+                    change_volume "set" "$1"
+                else
+                    echo "Invalid volume command: $1"
+                    exit 1
+                fi
                 ;;
         esac
         ;;
+    brightness|br|b)
+        shift
+        case "$1" in
+            set|s)
+                change_brightness "set" "$2"
+                ;;
+            inc|i|up|+)
+                change_brightness "inc" "${2:-5}"
+                ;;
+            dec|d|down|-)
+                change_brightness "dec" "${2:-5}"
+                ;;
+            *)
+                if [[ "$1" =~ ^[0-9]+%?$ ]]; then
+                    change_brightness "set" "$1"
+                else
+                    echo "Invalid brightness command: $1"
+                    exit 1
+                fi
+                ;;
+        esac
+        ;;
+    mute|m)
+        toggle_mute
+        ;;
+    mic)
+        toggle_mic_mute
+        ;;
+    help|h|--help|-h)
+        show_help
+        ;;
     *)
-        echo "Usage: $0 <brightness|volume|mute> <value>"
+        echo "Unknown option: $1"
+        echo "Try '$(basename "$0") help' for more information."
         exit 1
         ;;
 esac
