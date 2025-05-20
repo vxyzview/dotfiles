@@ -1,98 +1,449 @@
 #!/bin/bash
+#
+# Enhanced Screen Recording Script
+# Features:
+# - Better error handling
+# - Preview option
+# - Modern codecs (AV1) 
+# - Hardware acceleration support
+# - Display selection
+# - Configurable recording area
+# - Sound level indicators
+# - Status indicator during recording
+# - Cleaner visual elements
 
-# Function to show menu and get user choice for quality, FPS, and audio
-function show_menu {
-    # Use rofi for menu selection and store choices in variables
-    quality=$(echo -e "High\nMedium\nLow" | rofi -dmenu -p "Select quality:")
-    case $quality in
-        High)
-            preset="ultrafast"
-            crf=18  # Lower CRF for higher video quality
+# Default settings
+CONFIG_DIR="$HOME/.config/screenrecorder"
+CONFIG_FILE="$CONFIG_DIR/config"
+ICON_PATH="/usr/share/icons/Papirus/48x48/apps/simplescreenrecorder.svg"
+TEMP_DIR="/tmp/screenrecorder"
+NOTIFICATION_ID=9876
+
+# Create necessary directories
+mkdir -p "$CONFIG_DIR" "$TEMP_DIR"
+
+# Load configuration if exists
+if [ -f "$CONFIG_FILE" ]; then
+    source "$CONFIG_FILE"
+else
+    # Default configuration
+    DEFAULT_OUTPUT_DIR="$HOME/Videos/Recordings"
+    DEFAULT_QUALITY="Medium"
+    DEFAULT_FPS="60"
+    DEFAULT_AUDIO="Yes"
+    DEFAULT_ENCODER="libx264" # Alternative: av1_nvenc, h264_nvenc, h264_vaapi
+    
+    # Create default config
+    mkdir -p "$DEFAULT_OUTPUT_DIR"
+    cat > "$CONFIG_FILE" << EOF
+OUTPUT_DIR="$DEFAULT_OUTPUT_DIR"
+DEFAULT_QUALITY="$DEFAULT_QUALITY"
+DEFAULT_FPS="$DEFAULT_FPS"
+DEFAULT_AUDIO="$DEFAULT_AUDIO"
+DEFAULT_ENCODER="$DEFAULT_ENCODER"
+EOF
+    
+    # Load the newly created config
+    source "$CONFIG_FILE"
+fi
+
+# Function to check dependencies
+check_dependencies() {
+    local missing_deps=()
+    
+    for dep in ffmpeg rofi dunstify xdpyinfo slop; do
+        if ! command -v "$dep" &> /dev/null; then
+            missing_deps+=("$dep")
+        fi
+    done
+    
+    if [ ${#missing_deps[@]} -ne 0 ]; then
+        dunstify -r $NOTIFICATION_ID "Error" "Missing dependencies: ${missing_deps[*]}\nPlease install them to continue." -u critical
+        exit 1
+    fi
+}
+
+# Function to detect hardware acceleration support
+detect_hw_accel() {
+    # Check for NVIDIA NVENC
+    if ffmpeg -hide_banner -encoders 2>/dev/null | grep -q 'h264_nvenc' && 
+       command -v nvidia-smi &> /dev/null; then
+        HW_ENCODERS+=("h264_nvenc")
+        HW_ENCODERS+=("av1_nvenc")
+    fi
+    
+    # Check for Intel QuickSync (VAAPI)
+    if ffmpeg -hide_banner -encoders 2>/dev/null | grep -q 'h264_vaapi' && 
+       [ -d "/dev/dri" ]; then
+        HW_ENCODERS+=("h264_vaapi")
+    fi
+    
+    # Check for AMD AMF
+    if ffmpeg -hide_banner -encoders 2>/dev/null | grep -q 'h264_amf'; then
+        HW_ENCODERS+=("h264_amf")
+    fi
+}
+
+# Function to show menu and get user choices
+show_menu() {
+    # Detect displays
+    IFS=$'\n' read -r -d '' -a displays < <(xrandr | grep " connected " | awk '{print $1}' && printf '\0')
+    
+    # If there's only one display, use it directly
+    if [ ${#displays[@]} -eq 1 ]; then
+        selected_display="${displays[0]}"
+    else
+        # Ask user to select a display
+        selected_display=$(printf '%s\n' "${displays[@]}" | rofi -dmenu -p "Select display:" -i)
+        if [ -z "$selected_display" ]; then
+            dunstify -r $NOTIFICATION_ID "Screen Recording" "Cancelled by user" -u low
+            exit 0
+        fi
+    fi
+    
+    # Get display geometry
+    display_geometry=$(xrandr | grep "^$selected_display" -A1 | grep -oP '\d+x\d+\+\d+\+\d+' | head -n 1)
+    if [ -z "$display_geometry" ]; then
+        dunstify -r $NOTIFICATION_ID "Error" "Could not detect display geometry for $selected_display" -u critical
+        exit 1
+    fi
+    
+    # Selection options
+    selection_type=$(echo -e "Full Screen\nSelect Region\nActive Window" | rofi -dmenu -p "Capture area:" -i)
+    case "$selection_type" in
+        "Full Screen")
+            screen_area="$display_geometry"
             ;;
-        Medium)
+        "Select Region")
+            # Let user select region using slop
+            dunstify -r $NOTIFICATION_ID "Screen Recording" "Select the area to record..." -u low
+            sleep 0.5
+            screen_area=$(slop -f "%x,%y %wx%h")
+            if [ -z "$screen_area" ]; then
+                dunstify -r $NOTIFICATION_ID "Screen Recording" "Selection cancelled" -u low
+                exit 0
+            fi
+            # Convert to ffmpeg format
+            screen_area=$(echo "$screen_area" | sed 's/,/+/g')
+            ;;
+        "Active Window")
+            # Get active window
+            active_window_id=$(xdotool getactivewindow)
+            window_geometry=$(xdotool getwindowgeometry -shell "$active_window_id" | grep -E '^(X|Y|WIDTH|HEIGHT)=' | sed 's/^/export /g' | tr '\n' ';')
+            eval "$window_geometry"
+            screen_area="${WIDTH}x${HEIGHT}+${X}+${Y}"
+            ;;
+        *)
+            dunstify -r $NOTIFICATION_ID "Screen Recording" "Cancelled by user" -u low
+            exit 0
+            ;;
+    esac
+    
+    # Parse geometry
+    read -r width height x_pos y_pos < <(echo "$screen_area" | sed -E 's/([0-9]+)x([0-9]+)\+([0-9]+)\+([0-9]+)/\1 \2 \3 \4/g')
+    
+    # Quality selection with visual indicator
+    quality_options="Low (⚡️ Smaller file)\nMedium (⚖️ Balanced)\nHigh (🎞️ Best quality)"
+    quality=$(echo -e "$quality_options" | rofi -dmenu -p "Select quality:" -i)
+    case "$quality" in
+        "Low"*|"low"*)
+            preset="veryfast"
+            crf=28
+            quality_name="Low"
+            ;;
+        "Medium"*|"medium"*)
             preset="medium"
             crf=23
+            quality_name="Medium"
             ;;
-        Low)
-            preset="veryslow"
-            crf=28  # Higher CRF for lower video quality
-            ;;
-        *)
-            dunstify "Error" "Invalid quality choice. Exiting." --urgency=critical
-            exit 1
-            ;;
-    esac
-
-    fps=$(echo -e "60\n90\n120\n144\n240" | rofi -dmenu -p "Select FPS:")
-    case $fps in
-        60|90|120|144|240)
+        "High"*|"high"*)
+            preset="slow"
+            crf=18
+            quality_name="High"
             ;;
         *)
-            dunstify "Error" "Invalid FPS choice. Exiting." --urgency=critical
-            exit 1
+            dunstify -r $NOTIFICATION_ID "Screen Recording" "Cancelled by user" -u low
+            exit 0
             ;;
     esac
-
-    include_audio=$(echo -e "Yes\nNo" | rofi -dmenu -p "Include audio?")
-    case $include_audio in
-        Yes)
-            audio="-f pulse -i default"
-            ;;
-        No)
+    
+    # FPS selection
+    fps_options="30 (Lower CPU/GPU usage)\n60 (Smoother motion)\n144 (Gaming/Fast motion)"
+    fps=$(echo -e "$fps_options" | rofi -dmenu -p "Select FPS:" -i | awk '{print $1}')
+    if ! [[ "$fps" =~ ^[0-9]+$ ]]; then
+        dunstify -r $NOTIFICATION_ID "Screen Recording" "Cancelled by user" -u low
+        exit 0
+    fi
+    
+    # Detect hardware acceleration
+    HW_ENCODERS=()
+    detect_hw_accel
+    
+    # Default software encoder
+    encoder_options="libx264 (Software - compatible)"
+    
+    # Add hardware encoders if available
+    for hw_enc in "${HW_ENCODERS[@]}"; do
+        case "$hw_enc" in
+            "h264_nvenc")
+                encoder_options+="\nh264_nvenc (NVIDIA GPU - faster)"
+                ;;
+            "av1_nvenc")
+                encoder_options+="\nav1_nvenc (NVIDIA GPU - better quality)"
+                ;;
+            "h264_vaapi")
+                encoder_options+="\nh264_vaapi (Intel GPU - faster)"
+                ;;
+            "h264_amf")
+                encoder_options+="\nh264_amf (AMD GPU - faster)"
+                ;;
+        esac
+    done
+    
+    # Encoder selection
+    encoder=$(echo -e "$encoder_options" | rofi -dmenu -p "Select encoder:" -i | awk '{print $1}')
+    if [ -z "$encoder" ]; then
+        encoder="libx264"  # Default if nothing selected
+    fi
+    
+    # Audio options
+    audio_devices=$(pactl list sources short | grep -v ".monitor" | awk '{print $2}')
+    
+    include_audio=$(echo -e "Yes (🎙️ With microphone)\nNo (🔇 Silent recording)" | rofi -dmenu -p "Include audio?:" -i)
+    
+    if [[ "$include_audio" == "Yes"* ]]; then
+        if [ -z "$audio_devices" ]; then
             audio=""
-            ;;
-        *)
-            dunstify "Error" "Invalid audio choice. Exiting." --urgency=critical
-            exit 1
-            ;;
-    esac
+            dunstify -r $NOTIFICATION_ID "Warning" "No microphone found, recording without audio" -u low
+        else
+            if [ "$(echo "$audio_devices" | wc -l)" -eq 1 ]; then
+                # Only one device available, use it
+                audio_device=$(echo "$audio_devices" | head -n1)
+            else
+                # Multiple devices, let user choose
+                audio_device=$(echo "$audio_devices" | rofi -dmenu -p "Select microphone:")
+            fi
+            
+            if [ -z "$audio_device" ]; then
+                audio=""
+                include_audio="No"
+            else
+                audio="-f pulse -i $audio_device"
+                # Show audio level meter
+                pavucontrol --tab=4 &
+                PAVUCONTROL_PID=$!
+            fi
+        fi
+    else
+        audio=""
+    fi
+    
+    # File format selection
+    format=$(echo -e "mkv (Best compatibility)\nmp4 (Widely supported)\nwebm (Smaller file)" | 
+        rofi -dmenu -p "Select file format:" -i | awk '{print $1}')
+    
+    # If user cancelled
+    if [ -z "$format" ]; then
+        format="mkv"  # Default if nothing selected
+    fi
+    
+    # Ask if user wants to show a countdown
+    countdown=$(echo -e "Yes\nNo" | rofi -dmenu -p "Show 3-second countdown?" -i)
 }
 
 # Function to start screen recording
-function start_recording {
-    show_menu
-
-    # Define output directory
-    output_dir="$HOME/Videos"
-
-    # Create output directory if it does not exist
-    mkdir -p "$output_dir"
-
-    # Generate output file name with date and time (using dots for date and colons for time)
-    datetime=$(date '+%Y.%m.%d_%H:%M:%S')
-
-    resolution=$(xdpyinfo | awk '/dimensions/ {print $2}')
-    fps_suffix="${fps}fps"
-    audio_suffix=$(echo "$include_audio" | tr '[:upper:]' '[:lower:]')
-    audio_suffix="${audio_suffix}_audio"
-
-    # Construct descriptive file name with chosen separators
-    output_file="$output_dir/Screenrecord_${datetime}_${resolution}_${fps_suffix}_${quality}_${audio_suffix}.mkv"
-
-    # Log the recording settings as a notification using dunstify
-    dunstify "Starting screen recording" \
-             "Quality: $quality, FPS: $fps, Audio: $include_audio" \
-             --urgency=low
-
-    # Start recording using ffmpeg with adjusted parameters
-    ffmpeg -probesize 50M -thread_queue_size 1024 -f x11grab -video_size "$resolution" \
-           -framerate $fps -i $DISPLAY $audio \
-           -c:v libx264 -preset $preset -crf $crf -pix_fmt yuv420p \
-           -c:a flac -compression_level 8 \
+start_recording() {
+    # Generate output file name
+    datetime=$(date '+%Y.%m.%d_%H.%M.%S')
+    
+    # Create output directory if it doesn't exist
+    mkdir -p "$OUTPUT_DIR"
+    
+    # Shortened format for filename
+    audio_suffix=$(echo "$include_audio" | grep -q "Yes" && echo "with_audio" || echo "no_audio")
+    
+    # Construct descriptive file name
+    output_file="${OUTPUT_DIR}/Recording_${datetime}_${width}x${height}_${fps}fps_${quality_name}.${format}"
+    
+    # Show countdown if requested
+    if [[ "$countdown" == "Yes" ]]; then
+        for i in {3..1}; do
+            dunstify -r $NOTIFICATION_ID "Recording starts in..." "$i" -t 1000 -u critical
+            sleep 1
+        done
+    fi
+    
+    # Build ffmpeg command based on encoder
+    case "$encoder" in
+        "h264_nvenc")
+            encoder_options="-c:v h264_nvenc -preset p4 -qp ${crf} -rc constqp"
+            ;;
+        "av1_nvenc")
+            encoder_options="-c:v av1_nvenc -preset p4 -qp ${crf} -rc constqp"
+            ;;
+        "h264_vaapi")
+            # Initialize VAAPI device
+            encoder_options="-vaapi_device /dev/dri/renderD128 -vf 'format=nv12,hwupload' -c:v h264_vaapi -qp ${crf}"
+            ;;
+        "h264_amf")
+            encoder_options="-c:v h264_amf -quality quality -qp_i ${crf} -qp_p ${crf}"
+            ;;
+        *)
+            # Default to libx264
+            encoder_options="-c:v libx264 -preset ${preset} -crf ${crf} -pix_fmt yuv420p"
+            ;;
+    esac
+    
+    # Set appropriate audio encoder based on format
+    case "$format" in
+        "webm")
+            audio_codec="-c:a libopus -b:a 128k"
+            ;;
+        *)
+            audio_codec="-c:a aac -b:a 192k"
+            ;;
+    esac
+    
+    # Start recording indicator
+    recording_indicator_file="${TEMP_DIR}/recording_active"
+    touch "$recording_indicator_file"
+    
+    # Show recording indicator (in a subshell so it runs in background)
+    (
+        while [ -f "$recording_indicator_file" ]; do
+            dunstify -r $NOTIFICATION_ID "⏺️ Recording in progress" "Press Ctrl+C in terminal to stop" -t 3000 -u critical
+            sleep 3
+        done
+    ) &
+    INDICATOR_PID=$!
+    
+    # Get recording start time for duration calculation
+    start_time=$(date +%s)
+    
+    # Start recording using ffmpeg
+    ffmpeg -hide_banner -loglevel warning \
+           -probesize 64M -thread_queue_size 4096 \
+           -f x11grab -draw_mouse 1 -framerate "$fps" \
+           -video_size "${width}x${height}" -i "$DISPLAY+${x_pos},${y_pos}" \
+           $audio \
+           $encoder_options \
+           $audio_codec \
+           -movflags +faststart \
            -af "aresample=async=1:min_hard_comp=0.100000:first_pts=0" \
-           -avoid_negative_ts make_zero \
-           -fflags +genpts \
+           -vsync 1 -async 1 \
            "$output_file"
-
-    # Check if ffmpeg command was successful
-    if [ $? -eq 0 ]; then
-        dunstify "Screen recording complete" "File saved: $output_file" --urgency=normal
+    
+    # Capture return code
+    ffmpeg_result=$?
+    
+    # Calculate recording duration
+    end_time=$(date +%s)
+    duration=$((end_time - start_time))
+    minutes=$((duration / 60))
+    seconds=$((duration % 60))
+    
+    # Remove recording indicator
+    rm -f "$recording_indicator_file"
+    
+    # Kill background processes
+    kill $INDICATOR_PID 2>/dev/null
+    
+    if [ -n "$PAVUCONTROL_PID" ]; then
+        kill $PAVUCONTROL_PID 2>/dev/null
+    fi
+    
+    # Check recording result
+    if [ $ffmpeg_result -eq 0 ]; then
+        # Calculate file size in MB
+        file_size=$(du -h "$output_file" | cut -f1)
+        
+        # Show completion notification with file info and action buttons
+        dunstify -r $NOTIFICATION_ID "Recording Complete ✅" \
+            "📁 File: $(basename "$output_file")\n⏱️ Duration: ${minutes}m ${seconds}s\n💾 Size: ${file_size}" \
+            -u normal -i "$ICON_PATH" \
+            -A "open,Open File" -A "folder,Open Folder"
+        
+        # Get notification action
+        case "$?" in
+            0) xdg-open "$output_file" ;; # Open file
+            1) xdg-open "$(dirname "$output_file")" ;; # Open folder
+        esac
     else
-        dunstify "Recording stopped" "An error occurred during recording." --urgency=critical
+        dunstify -r $NOTIFICATION_ID "Recording Error ❌" \
+            "FFmpeg exited with code $ffmpeg_result.\nPlease check terminal output." \
+            -u critical
+    fi
+}
+
+# Function to show help message
+show_help() {
+    echo "Enhanced Screen Recording Script"
+    echo "--------------------------------"
+    echo "Usage: $(basename "$0") [OPTION]"
+    echo ""
+    echo "Options:"
+    echo "  -h, --help       Display this help message"
+    echo "  -c, --config     Open configuration file"
+    echo "  -p, --preview    Preview recording area before starting"
+    echo ""
+    echo "Press Ctrl+C in terminal to stop recording."
+    exit 0
+}
+
+# Function to preview recording area
+preview_area() {
+    show_menu
+    
+    # Create temporary screenshot of selected area
+    temp_preview="${TEMP_DIR}/preview.png"
+    ffmpeg -hide_banner -loglevel error \
+           -f x11grab -video_size "${width}x${height}" \
+           -i "$DISPLAY+${x_pos},${y_pos}" \
+           -frames:v 1 "$temp_preview"
+           
+    # Show preview with border
+    convert "$temp_preview" -bordercolor red -border 2 "$temp_preview"
+    
+    # Display preview
+    feh --title "Recording Area Preview" "$temp_preview" &
+    preview_pid=$!
+    
+    # Ask if user wants to continue
+    continue_recording=$(echo -e "Yes\nNo" | rofi -dmenu -p "Start recording with this area?")
+    
+    # Kill preview
+    kill $preview_pid 2>/dev/null
+    rm -f "$temp_preview"
+    
+    if [[ "$continue_recording" == "Yes" ]]; then
+        start_recording
+    else
+        dunstify -r $NOTIFICATION_ID "Recording" "Cancelled by user" -u low
+        exit 0
     fi
 }
 
 # Main script
-start_recording
+
+# Check dependencies
+check_dependencies
+
+# Process command line arguments
+case "$1" in
+    -h|--help)
+        show_help
+        ;;
+    -c|--config)
+        xdg-open "$CONFIG_FILE"
+        exit 0
+        ;;
+    -p|--preview)
+        preview_area
+        ;;
+    *)
+        show_menu
+        start_recording
+        ;;
+esac
 
 exit 0
