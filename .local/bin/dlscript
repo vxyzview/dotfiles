@@ -41,15 +41,11 @@ check_dependencies() {
     show_status "Missing dependencies: ${missing_deps[*]}" "${RED}"
     
     if [[ " ${missing_deps[*]} " =~ " xclip " ]]; then
-      echo "Install xclip with: sudo pacman -S xclip"
-    else
-      echo "Install xclip with: sudo xbps-install -S xclip"
+      echo "Install xclip with: sudo pacman -S xclip (archlinux) or sudo xbps-install -S xclip (voidlinux)"
     fi
     
     if [[ " ${missing_deps[*]} " =~ " aria2c " ]]; then
-      echo "Install xclip with: sudo pacman -S xclip"
-    else
-      echo "Install xclip with: sudo xbps-install -S xclip"
+      echo "Install xclip with: sudo pacman -S aria2 (archlinux) or sudo xbps-install -S aria2 (voidlinux)"
     fi
     
     exit 1
