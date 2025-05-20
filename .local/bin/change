@@ -1,102 +1,512 @@
 #!/bin/bash
-# shellcheck disable=SC2199
-# shellcheck disable=SC2086
-# shellcheck source=/dev/null
-#
-# Copyright (C) 2024-02 pyranix <pyranix@proton.me>
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+
+#=====================================================
+# Improved Theme & Wallpaper Switcher
+# Features:
+# - Better error handling
+# - Progress indicators
+# - Configuration file support
+# - Theme preview capability
+# - Backup of current configuration
+#=====================================================
+
 set -e
 
+# Config file for persistent settings
+CONFIG_FILE="$HOME/.config/qtheme.conf"
 # Define the theme and wallpaper folder paths
-qtheme_dir="$HOME/.qtheme"
-wallpaper_dir="$HOME/.wallpaper"
+QTHEME_DIR="${QTHEME_DIR:-$HOME/.qtheme}"
+WALLPAPER_DIR="${WALLPAPER_DIR:-$HOME/.wallpaper}"
+# Default fallback wallpaper
+DEFAULT_WALLPAPER="$WALLPAPER_DIR/default.jpg"
+# For backup purposes
+BACKUP_DIR="$HOME/.config/qtheme_backup/$(date +%Y%m%d_%H%M%S)"
 
-# Function to select a theme
+# Color definitions for better visual output
+BLUE='\033[0;34m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+RED='\033[0;31m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+# Function to display messages with color
+print_msg() {
+    local color="$1"
+    local message="$2"
+    echo -e "${color}${message}${NC}"
+}
+
+# Function to create loading spinner
+show_spinner() {
+    local pid=$1
+    local message="$2"
+    local spin='-\|/'
+    local i=0
+    
+    while kill -0 $pid 2>/dev/null; do
+        i=$(( (i+1) % 4 ))
+        printf "\r${CYAN}%s${NC} %s" "$message" "${spin:$i:1}"
+        sleep .1
+    done
+    printf "\r${GREEN}✓ %s - Done!${NC}\n" "$message"
+}
+
+# Function to load config if exists
+load_config() {
+    if [ -f "$CONFIG_FILE" ]; then
+        print_msg "$BLUE" "Loading previous configuration..."
+        source "$CONFIG_FILE"
+    fi
+}
+
+# Function to save config
+save_config() {
+    local theme="$1"
+    local wallpaper="$2"
+    
+    mkdir -p "$(dirname "$CONFIG_FILE")"
+    echo "LAST_THEME=\"$theme\"" > "$CONFIG_FILE"
+    echo "LAST_WALLPAPER=\"$wallpaper\"" >> "$CONFIG_FILE"
+}
+
+# Function to create a backup of current configuration
+backup_current_config() {
+    print_msg "$BLUE" "Creating backup of current configuration..."
+    mkdir -p "$BACKUP_DIR"
+    
+    if [ -d "$HOME/.config/qtile" ]; then
+        cp -r "$HOME/.config/qtile" "$BACKUP_DIR/"
+    fi
+    
+    if [ -d "$HOME/.config/alacritty" ]; then
+        cp -r "$HOME/.config/alacritty" "$BACKUP_DIR/"
+    fi
+    
+    # Add other important config directories here
+    print_msg "$GREEN" "Backup created at: $BACKUP_DIR"
+}
+
+# Function to check dependencies
+check_dependencies() {
+    local missing_deps=()
+    
+    for dep in rofi feh gsettings xdg-user-dirs-update qtile notify-send; do
+        if ! command -v "$dep" &> /dev/null; then
+            missing_deps+=("$dep")
+        fi
+    done
+    
+    if [ ${#missing_deps[@]} -ne 0 ]; then
+        print_msg "$RED" "ERROR: Missing dependencies: ${missing_deps[*]}"
+        print_msg "$YELLOW" "Please install these packages and try again."
+        exit 1
+    fi
+}
+
+# Function to show available themes with previews
 select_theme() {
-    theme_list=$(ls "$qtheme_dir")
-    selected_theme=$(echo "$theme_list" | rofi -dmenu -p "Select Theme:")
+    # Check if theme directory exists
+    if [ ! -d "$QTHEME_DIR" ]; then
+        print_msg "$RED" "ERROR: Theme directory '$QTHEME_DIR' not found."
+        print_msg "$YELLOW" "Creating theme directory structure..."
+        mkdir -p "$QTHEME_DIR"
+        print_msg "$GREEN" "Please add themes to '$QTHEME_DIR' and try again."
+        exit 1
+    fi
+    
+    # Count available themes
+    theme_count=$(ls -1 "$QTHEME_DIR" | wc -l)
+    if [ "$theme_count" -eq 0 ]; then
+        print_msg "$RED" "ERROR: No themes found in '$QTHEME_DIR'."
+        exit 1
+    fi
+    
+    # List themes and create preview strings
+    local theme_list=""
+    for theme in "$QTHEME_DIR"/*; do
+        theme_name=$(basename "$theme")
+        preview=$(grep -l "color" "$theme"/* 2>/dev/null | head -n 1)
+        
+        # Create a preview string of colors if possible
+        if [ -n "$preview" ]; then
+            preview_text="$(basename "$theme") - $(grep "color" "$preview" | head -n 1 | cut -d "#" -f2 | cut -c1-6)"
+        else
+            preview_text="$theme_name"
+        fi
+        
+        theme_list+="$preview_text\n"
+    done
+    
+    # Use rofi with a more attractive theme for selection
+    selected_theme=$(echo -e "$theme_list" | rofi -dmenu -i -p "Select Theme:" \
+        -theme-str 'window {width: 30%; border-radius: 10px;}' \
+        -theme-str 'listview {lines: 10; scrollbar: true;}' \
+        -theme-str 'element-text {padding: 5px;}' \
+        | awk '{print $1}')
     
     if [ -n "$selected_theme" ]; then
         apply_theme "$selected_theme"
     else
-        echo "No theme selected. Exiting..."
-        exit 1
+        print_msg "$YELLOW" "No theme selected. Exiting..."
+        exit 0
     fi
 }
 
 # Function to apply the selected theme
 apply_theme() {
     local selected_theme="$1"
-    src_path="$qtheme_dir/$selected_theme"
-    dest_path="$HOME/.config/"
+    local src_path="$QTHEME_DIR/$selected_theme"
+    local dest_path="$HOME/.config/"
     
     # Check if the theme directory exists
     if [ ! -d "$src_path" ]; then
-        echo "Error: Theme directory '$src_path' not found."
+        print_msg "$RED" "ERROR: Theme directory '$src_path' not found."
         exit 1
     fi
-
-    # Copy the selected theme to the destination
-    cp -r "$src_path/"* "$dest_path"
-
-    # Update the icon theme based on the selected theme
-    case $selected_theme in
-        "redrose")
-            gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3-red"
-            gsettings set org.gnome.desktop.interface icon-theme "Tela-red"
-            ;;
-        "bluerod")
-            gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3-blue"
-            gsettings set org.gnome.desktop.interface icon-theme "Tela-purple"
-            ;;
-        "nyoom")
-            gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3-dark"
-            gsettings set org.gnome.desktop.interface icon-theme "Tela-black"
-            ;;
-    esac
-
-    select_wallpaper
+    
+    print_msg "$BLUE" "Applying theme: $selected_theme"
+    
+    # Backup first
+    backup_current_config
+    
+    # Copy the selected theme files to the destination (run in background for spinner)
+    {
+        cp -r "$src_path/"* "$dest_path"
+    } &
+    show_spinner $! "Copying theme files"
+    
+    # Update the icon theme based on the selected theme - with improved mapping
+    {
+        case $selected_theme in
+            "redrose")
+                gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3-red"
+                gsettings set org.gnome.desktop.interface icon-theme "Tela-red"
+                gsettings set org.gnome.desktop.interface cursor-theme "Bibata-Modern-Red"
+                ;;
+            "bluerod")
+                gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3-blue"
+                gsettings set org.gnome.desktop.interface icon-theme "Tela-purple"
+                gsettings set org.gnome.desktop.interface cursor-theme "Bibata-Modern-Blue"
+                ;;
+            "nyoom")
+                gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3-dark"
+                gsettings set org.gnome.desktop.interface icon-theme "Tela-black"
+                gsettings set org.gnome.desktop.interface cursor-theme "Bibata-Modern-Classic"
+                ;;
+            *)
+                # Try to determine theme settings from theme files
+                if [ -f "$src_path/theme_settings.conf" ]; then
+                    source "$src_path/theme_settings.conf"
+                    if [ -n "$GTK_THEME" ]; then
+                        gsettings set org.gnome.desktop.interface gtk-theme "$GTK_THEME"
+                    fi
+                    if [ -n "$ICON_THEME" ]; then
+                        gsettings set org.gnome.desktop.interface icon-theme "$ICON_THEME"
+                    fi
+                    if [ -n "$CURSOR_THEME" ]; then
+                        gsettings set org.gnome.desktop.interface cursor-theme "$CURSOR_THEME"
+                    fi
+                else
+                    print_msg "$YELLOW" "No theme settings found, using system defaults"
+                fi
+                ;;
+        esac
+    } &
+    show_spinner $! "Applying GTK and icon themes"
+    
+    # Save the selected theme to the config file
+    save_config "$selected_theme" ""
+    
+    # Send notification
+    notify-send -i preferences-desktop-theme "Theme Applied" "The theme '$selected_theme' has been applied successfully."
+    
+    # Now select a wallpaper to match the theme
+    select_wallpaper "$selected_theme"
 }
 
 # Function to select a wallpaper
 select_wallpaper() {
-    wallpaper_list=$(ls "$wallpaper_dir")
-    selected_wallpaper=$(echo "$wallpaper_list" | rofi -dmenu -p "Select Wallpaper:")
-
-    if [ -n "$selected_wallpaper" ]; then
-        # Set the selected wallpaper
-        feh --bg-fill "$wallpaper_dir/$selected_wallpaper"
-        echo "Wallpaper '$selected_wallpaper' set successfully!"
-    else
-        echo "No wallpaper selected. Using the default wallpaper."
+    local theme="$1"
+    
+    # Check if the wallpaper directory exists
+    if [ ! -d "$WALLPAPER_DIR" ]; then
+        print_msg "$YELLOW" "Wallpaper directory '$WALLPAPER_DIR' not found. Creating it..."
+        mkdir -p "$WALLPAPER_DIR"
     fi
-
-    # Update user directories
-    xdg-user-dirs-update
-    xdg-user-dirs-gtk-update
-
-    # Display user directories
-    xdg-user-dir
-
-    # Restart Qtile to apply the changes
-    qtile cmd-obj -f restart
-
-    # Kill already running processes
-    for process in xsettingsd alacritty firefox dunst thunar ksuperkey; do
-        pidof "$process" && killall "$process"
-    done
+    
+    # Check if theme has a suggested wallpapers directory
+    local theme_wallpapers="$WALLPAPER_DIR/$theme"
+    local wallpaper_list=""
+    
+    if [ -d "$theme_wallpapers" ]; then
+        print_msg "$BLUE" "Found theme-specific wallpapers for $theme"
+        wallpaper_list=$(find "$theme_wallpapers" -type f -name "*.jpg" -o -name "*.png" | sort)
+    else
+        # Use all wallpapers
+        wallpaper_list=$(find "$WALLPAPER_DIR" -type f -name "*.jpg" -o -name "*.png" | sort)
+    fi
+    
+    # Check if we found any wallpapers
+    if [ -z "$wallpaper_list" ]; then
+        print_msg "$YELLOW" "No wallpapers found. Please add some images to $WALLPAPER_DIR"
+        
+        # Skip wallpaper selection if none found
+        restart_environment
+        exit 0
+    fi
+    
+    # Format wallpaper list for rofi (with file sizes)
+    formatted_list=""
+    while IFS= read -r wallpaper; do
+        # Get file name and size
+        filename=$(basename "$wallpaper")
+        size=$(du -h "$wallpaper" | cut -f1)
+        formatted_list+="$filename ($size)\n"
+    done <<< "$wallpaper_list"
+    
+    # Select wallpaper using rofi with image previews (if available)
+    local rofi_theme=""
+    if rofi -help | grep -q "\-no-config"; then
+        # Use fancier rofi with previews if available
+        rofi_theme="-theme-str 'window {width: 50%; border-radius: 10px;}' -theme-str 'listview {lines: 8; scrollbar: true;}'"
+    fi
+    
+    selected_entry=$(echo -e "$formatted_list" | rofi -dmenu -i -p "Select Wallpaper:" $rofi_theme)
+    
+    if [ -n "$selected_entry" ]; then
+        # Extract filename from the entry
+        selected_filename=$(echo "$selected_entry" | cut -d "(" -f1 | sed 's/ *$//')
+        
+        # Find the full path
+        selected_wallpaper=""
+        while IFS= read -r wallpaper; do
+            if [[ "$wallpaper" == *"$selected_filename" ]]; then
+                selected_wallpaper="$wallpaper"
+                break
+            fi
+        done <<< "$wallpaper_list"
+        
+        # Set the selected wallpaper
+        if [ -n "$selected_wallpaper" ]; then
+            print_msg "$BLUE" "Setting wallpaper: $selected_filename"
+            {
+                feh --bg-fill "$selected_wallpaper"
+            } &
+            show_spinner $! "Applying wallpaper"
+            
+            # Update the config
+            save_config "$theme" "$selected_wallpaper"
+            
+            # Send notification
+            notify-send -i preferences-desktop-wallpaper "Wallpaper Set" "Wallpaper '$selected_filename' applied successfully!"
+        else
+            print_msg "$RED" "Error finding the selected wallpaper."
+        fi
+    else
+        print_msg "$YELLOW" "No wallpaper selected. Using default if available."
+        # Try to use default wallpaper
+        if [ -f "$DEFAULT_WALLPAPER" ]; then
+            feh --bg-fill "$DEFAULT_WALLPAPER"
+        fi
+    fi
+    
+    # Finally restart the environment
+    restart_environment
 }
 
-# Start the script by selecting a theme
-select_theme
+# Function to restart the desktop environment
+restart_environment() {
+    print_msg "$BLUE" "Updating user directories..."
+    {
+        # Update user directories
+        xdg-user-dirs-update
+        if command -v xdg-user-dirs-gtk-update &> /dev/null; then
+            xdg-user-dirs-gtk-update
+        fi
+    } &
+    show_spinner $! "Updating XDG user directories"
+    
+    # Display user directories
+    print_msg "$CYAN" "User directories:"
+    for dir in DESKTOP DOCUMENTS DOWNLOAD MUSIC PICTURES VIDEOS; do
+        echo -e "${YELLOW}$dir:${NC} $(xdg-user-dir $dir)"
+    done
+    
+    # Kill already running processes
+    print_msg "$BLUE" "Restarting services..."
+    processes_to_kill=("xsettingsd" "alacritty" "firefox" "dunst" "thunar" "ksuperkey" "picom")
+    
+    for process in "${processes_to_kill[@]}"; do
+        if pidof "$process" &>/dev/null; then
+            killall "$process" &>/dev/null
+            print_msg "$YELLOW" "Restarted: $process"
+        fi
+    done
+    
+    # Auto-start applications that should be restarted
+    {
+        # Start picom if available
+        if command -v picom &> /dev/null; then
+            picom -b
+        fi
+        
+        # Start dunst if available
+        if command -v dunst &> /dev/null; then
+            dunst &
+        fi
+    } &
+    
+    # Restart Qtile to apply the changes
+    print_msg "$PURPLE" "Restarting Qtile window manager..."
+    sleep 1
+    qtile cmd-obj -f restart
+    
+    print_msg "$GREEN" "✨ Theme switch completed successfully! ✨"
+}
+
+# Function to show usage
+show_help() {
+    cat << EOF
+Usage: $(basename "$0") [OPTION]
+
+Options:
+  -h, --help        Show this help message and exit
+  -l, --last        Apply the last used theme and wallpaper
+  -t, --theme NAME  Apply a specific theme by name
+  -w, --wallpaper   Only select a new wallpaper
+  -r, --restore     Restore from the most recent backup
+
+Examples:
+  $(basename "$0")            # Interactive theme selection
+  $(basename "$0") --last     # Reapply the last theme
+  $(basename "$0") -t redrose # Apply the 'redrose' theme
+EOF
+    exit 0
+}
+
+# Function to restore from backup
+restore_backup() {
+    print_msg "$BLUE" "Looking for backups..."
+    
+    local backups_dir="$HOME/.config/qtheme_backup"
+    if [ ! -d "$backups_dir" ]; then
+        print_msg "$RED" "No backups found."
+        exit 1
+    fi
+    
+    # List backups sorted by date (newest first)
+    local backups=$(ls -1t "$backups_dir")
+    if [ -z "$backups" ]; then
+        print_msg "$RED" "No backups found."
+        exit 1
+    fi
+    
+    # Format backup list with dates
+    local formatted_backups=""
+    while IFS= read -r backup; do
+        # Convert backup date format to human-readable
+        local date_str=$(echo "$backup" | sed 's/_/ /' | sed 's/\([0-9]\{4\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)/\1-\2-\3/')
+        formatted_backups+="$backup ($date_str)\n"
+    done <<< "$backups"
+    
+    # Select backup using rofi
+    local selected_entry=$(echo -e "$formatted_backups" | rofi -dmenu -i -p "Select Backup to Restore:")
+    
+    if [ -n "$selected_entry" ]; then
+        # Extract backup name
+        local selected_backup=$(echo "$selected_entry" | cut -d "(" -f1 | sed 's/ *$//')
+        local backup_path="$backups_dir/$selected_backup"
+        
+        if [ -d "$backup_path" ]; then
+            print_msg "$BLUE" "Restoring from backup: $selected_backup"
+            
+            # Restore backup
+            {
+                for dir in "$backup_path"/*; do
+                    if [ -d "$dir" ]; then
+                        dir_name=$(basename "$dir")
+                        # Make sure the target directory exists
+                        mkdir -p "$HOME/.config/$dir_name"
+                        # Copy files from backup
+                        cp -rf "$dir"/* "$HOME/.config/$dir_name/"
+                    fi
+                done
+            } &
+            show_spinner $! "Restoring configuration files"
+            
+            # Restart environment
+            restart_environment
+        else
+            print_msg "$RED" "Backup directory not found: $backup_path"
+            exit 1
+        fi
+    else
+        print_msg "$YELLOW" "No backup selected. Exiting..."
+        exit 0
+    fi
+}
+
+# Main function
+main() {
+    # Check for dependencies first
+    check_dependencies
+    
+    # Load configuration
+    load_config
+    
+    # Process command line arguments
+    case "$1" in
+        -h|--help)
+            show_help
+            ;;
+        -l|--last)
+            if [ -n "$LAST_THEME" ]; then
+                print_msg "$BLUE" "Applying last used theme: $LAST_THEME"
+                apply_theme "$LAST_THEME"
+                
+                if [ -n "$LAST_WALLPAPER" ] && [ -f "$LAST_WALLPAPER" ]; then
+                    feh --bg-fill "$LAST_WALLPAPER"
+                    restart_environment
+                else
+                    select_wallpaper "$LAST_THEME"
+                fi
+            else
+                print_msg "$YELLOW" "No previous theme found. Starting selection..."
+                select_theme
+            fi
+            ;;
+        -t|--theme)
+            if [ -n "$2" ]; then
+                apply_theme "$2"
+            else
+                print_msg "$RED" "ERROR: No theme name provided."
+                show_help
+            fi
+            ;;
+        -w|--wallpaper)
+            if [ -n "$LAST_THEME" ]; then
+                select_wallpaper "$LAST_THEME"
+            else
+                select_wallpaper ""
+            fi
+            ;;
+        -r|--restore)
+            restore_backup
+            ;;
+        "")
+            # No arguments, start interactive selection
+            print_msg "$CYAN" "🎨 QTheme Switcher - v2.0 🎨"
+            print_msg "$CYAN" "============================="
+            select_theme
+            ;;
+        *)
+            print_msg "$RED" "Unknown option: $1"
+            show_help
+            ;;
+    esac
+}
+
+# Start the script
+main "$@"
