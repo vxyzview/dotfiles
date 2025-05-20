@@ -1,13 +1,224 @@
-#!/bin/bash
+#!/usr/bin/env bash
+#
+# Enhanced Color Picker Script
+# This script captures a color with gpick, copies it to the clipboard,
+# and provides additional format options.
+#
+
+# Set script defaults
+NOTIFY_TIMEOUT=3000  # Notification timeout in milliseconds
+DEFAULT_FORMAT="hex"  # Default color format
+CLIPBOARD_TOOL=""    # Will be auto-detected
+
+# Terminal colors for visual feedback
+BOLD="\033[1m"
+GREEN="\033[32m"
+YELLOW="\033[33m"
+BLUE="\033[34m"
+RESET="\033[0m"
+
+# Check for dependencies
+check_dependencies() {
+    local missing=()
+    
+    for cmd in gpick notify-send; do
+        if ! command -v "$cmd" &> /dev/null; then
+            missing+=("$cmd")
+        fi
+    done
+    
+    # Check for clipboard tools and select one that's available
+    for clip_tool in xclip wl-copy; do
+        if command -v "$clip_tool" &> /dev/null; then
+            CLIPBOARD_TOOL="$clip_tool"
+            break
+        fi
+    done
+    
+    if [[ -z "$CLIPBOARD_TOOL" ]]; then
+        missing+=("xclip or wl-copy")
+    fi
+    
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        echo -e "${YELLOW}${BOLD}Missing dependencies:${RESET} ${missing[*]}"
+        echo "Please install the missing dependencies to use this script."
+        exit 1
+    fi
+}
+
+# Display usage information
+show_help() {
+    echo -e "${BOLD}Color Picker Script${RESET}"
+    echo "Picks a color and copies it to clipboard."
+    echo
+    echo -e "${BOLD}Usage:${RESET}"
+    echo "  $(basename "$0") [options]"
+    echo
+    echo -e "${BOLD}Options:${RESET}"
+    echo "  -h, --help         Show this help message"
+    echo "  -f, --format FORMAT   Set color format (hex, rgb, rgba, hsl, hsla)"
+    echo "                     Default: hex"
+    echo "  -n, --no-notify    Disable desktop notifications"
+    echo
+    echo -e "${BOLD}Examples:${RESET}"
+    echo "  $(basename "$0") --format rgb"
+    echo "  $(basename "$0") -f hsla"
+}
+
+# Copy text to clipboard based on available tool
+copy_to_clipboard() {
+    local text="$1"
+    
+    case "$CLIPBOARD_TOOL" in
+        "xclip")
+            echo -n "$text" | xclip -selection clipboard
+            ;;
+        "wl-copy")
+            echo -n "$text" | wl-copy
+            ;;
+    esac
+}
+
+# Convert color to different formats
+convert_color() {
+    local color="$1"
+    local format="$2"
+    
+    # Normalize HEX color (ensure it starts with #)
+    if [[ "$color" =~ ^[0-9A-Fa-f]{6}$ ]]; then
+        color="#$color"
+    fi
+    
+    # Extract RGB values
+    local r g b
+    if [[ "$color" =~ ^#([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})$ ]]; then
+        r=$((16#${BASH_REMATCH[1]}))
+        g=$((16#${BASH_REMATCH[2]}))
+        b=$((16#${BASH_REMATCH[3]}))
+    else
+        echo "$color"  # Return original if not convertible
+        return
+    fi
+    
+    case "$format" in
+        "hex")
+            echo "$color" | tr '[:upper:]' '[:lower:]'
+            ;;
+        "rgb")
+            echo "rgb($r, $g, $b)"
+            ;;
+        "rgba")
+            echo "rgba($r, $g, $b, 1.0)"
+            ;;
+        "hsl"|"hsla")
+            # Convert RGB to HSL
+            r=$(echo "scale=10; $r/255" | bc)
+            g=$(echo "scale=10; $g/255" | bc)
+            b=$(echo "scale=10; $b/255" | bc)
+            
+            local max min h s l
+            max=$(echo "$r > $g ? ($r > $b ? $r : $b) : ($g > $b ? $g : $b)" | bc)
+            min=$(echo "$r < $g ? ($r < $b ? $r : $b) : ($g < $b ? $g : $b)" | bc)
+            
+            l=$(echo "scale=3; ($max + $min)/2" | bc)
+            
+            if (( $(echo "$max == $min" | bc) )); then
+                h=0
+                s=0
+            else
+                local d=$(echo "$max - $min" | bc)
+                
+                if (( $(echo "$l > 0.5" | bc) )); then
+                    s=$(echo "scale=3; $d/(2-$max-$min)" | bc)
+                else
+                    s=$(echo "scale=3; $d/($max+$min)" | bc)
+                fi
+                
+                if (( $(echo "$max == $r" | bc) )); then
+                    h=$(echo "scale=3; ($g-$b)/$d" | bc)
+                    if (( $(echo "$g < $b" | bc) )); then
+                        h=$(echo "$h + 6" | bc)
+                    fi
+                elif (( $(echo "$max == $g" | bc) )); then
+                    h=$(echo "scale=3; ($b-$r)/$d + 2" | bc)
+                else
+                    h=$(echo "scale=3; ($r-$g)/$d + 4" | bc)
+                fi
+                h=$(echo "scale=0; $h * 60 / 1" | bc)
+            fi
+            
+            s=$(echo "scale=0; $s * 100 / 1" | bc)
+            l=$(echo "scale=0; $l * 100 / 1" | bc)
+            
+            if [[ "$format" == "hsl" ]]; then
+                echo "hsl($h, $s%, $l%)"
+            else
+                echo "hsla($h, $s%, $l%, 1.0)"
+            fi
+            ;;
+        *)
+            echo "$color"  # Default to original
+            ;;
+    esac
+}
+
+# Parse command-line arguments
+FORMAT="$DEFAULT_FORMAT"
+NOTIFY=true
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        -f|--format)
+            FORMAT="$2"
+            shift 2
+            ;;
+        -n|--no-notify)
+            NOTIFY=false
+            shift
+            ;;
+        *)
+            echo "Unknown option: $1"
+            show_help
+            exit 1
+            ;;
+    esac
+done
+
+# Check for required tools
+check_dependencies
 
 # Launch gpick and get the selected color
-color=$(gpick --pick --single --output)
+echo -e "${BLUE}${BOLD}Launching color picker...${RESET}"
+echo "Click on any pixel to pick its color."
 
-# Strip any trailing newline characters
-color=$(echo "$color" | tr -d '\n')
+COLOR=$(gpick --pick --single --output 2>/dev/null)
 
-# Copy the color value to the clipboard using xclip
-echo -n "$color" | xclip -selection clipboard
+# Exit if no color was picked (user canceled)
+if [[ -z "$COLOR" ]]; then
+    echo -e "${YELLOW}Color picking canceled.${RESET}"
+    exit 0
+fi
 
-# Display a notification using Dunst
-notify-send "Color Picked!" "Color '$color' copied to clipboard."
+# Strip any trailing newline characters and standardize format
+COLOR=$(echo "$COLOR" | tr -d '\n')
+
+# Convert color to the requested format
+FORMATTED_COLOR=$(convert_color "$COLOR" "$FORMAT")
+
+# Copy the color value to the clipboard
+copy_to_clipboard "$FORMATTED_COLOR"
+
+# Display feedback in terminal
+echo -e "${GREEN}${BOLD}Success!${RESET} Color picked: $FORMATTED_COLOR"
+
+# Display a notification if enabled
+if [[ "$NOTIFY" == true ]]; then
+    notify-send -t "$NOTIFY_TIMEOUT" "Color Picked!" "Color '$FORMATTED_COLOR' copied to clipboard." \
+    -h string:bgcolor:"$COLOR" -h string:fgcolor:"#FFFFFF"
+fi
+
+exit 0
