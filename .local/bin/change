@@ -16,87 +16,75 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-set -e
 
-# Define the theme and wallpaper folder paths
-qtheme_dir="$HOME/.qtheme"
-wallpaper_dir="$HOME/.wallpaper"
+set -euo pipefail
 
-# Function to select a theme
-select_theme() {
-    theme_list=$(ls "$qtheme_dir")
-    selected_theme=$(echo "$theme_list" | rofi -dmenu -p "Select Theme:")
-    
-    if [ -n "$selected_theme" ]; then
-        apply_theme "$selected_theme"
-    else
-        echo "No theme selected. Exiting..."
-        exit 1
-    fi
+readonly QTHEME_DIR="$HOME/.qtheme"
+readonly WALLPAPER_DIR="$HOME/.wallpaper"
+
+# Validate required directories and commands upfront
+_preflight() {
+    local missing=0
+    for dir in "$QTHEME_DIR" "$WALLPAPER_DIR"; do
+        [[ -d "$dir" ]] || { echo "Error: Directory '$dir' not found."; missing=1; }
+    done
+    for cmd in rofi feh gsettings qtile xdg-user-dirs-update xdg-user-dirs-gtk-update; do
+        command -v "$cmd" &>/dev/null || { echo "Error: '$cmd' not found in PATH."; missing=1; }
+    done
+    (( missing )) && exit 1
 }
 
-# Function to apply the selected theme
 apply_theme() {
     local selected_theme="$1"
-    src_path="$qtheme_dir/$selected_theme"
-    dest_path="$HOME/.config/"
-    
-    # Check if the theme directory exists
-    if [ ! -d "$src_path" ]; then
-        echo "Error: Theme directory '$src_path' not found."
-        exit 1
+    local src_path="$QTHEME_DIR/$selected_theme"
+
+    [[ -d "$src_path" ]] || { echo "Error: Theme directory '$src_path' not found."; exit 1; }
+
+    # Copy theme files
+    cp -r "$src_path/"* "$HOME/.config/"
+
+    # Apply GTK + icon theme in parallel
+    case $selected_theme in
+        redrose) gsettings set org.gnome.desktop.interface gtk-theme  "adw-gtk3-red"  &
+                 gsettings set org.gnome.desktop.interface icon-theme "Tela-red"      & ;;
+        bluerod) gsettings set org.gnome.desktop.interface gtk-theme  "adw-gtk3-blue" &
+                 gsettings set org.gnome.desktop.interface icon-theme "Tela-purple"   & ;;
+        nyoom)   gsettings set org.gnome.desktop.interface gtk-theme  "adw-gtk3-dark" &
+                 gsettings set org.gnome.desktop.interface icon-theme "Tela-black"    & ;;
+    esac
+    wait
+}
+
+select_wallpaper() {
+    local selected_wallpaper
+    selected_wallpaper=$(ls "$WALLPAPER_DIR" | rofi -dmenu -p "Select Wallpaper:")
+
+    if [[ -n "$selected_wallpaper" ]]; then
+        feh --bg-fill "$WALLPAPER_DIR/$selected_wallpaper"
+        echo "Wallpaper '$selected_wallpaper' set."
+    else
+        echo "No wallpaper selected. Keeping current."
     fi
 
-    # Copy the selected theme to the destination
-    cp -r "$src_path/"* "$dest_path"
+    # Update XDG dirs and kill stale processes in parallel
+    xdg-user-dirs-update &
+    xdg-user-dirs-gtk-update &
+    kill $(pidof xsettingsd alacritty firefox dunst thunar ksuperkey 2>/dev/null) 2>/dev/null &
 
-    # Update the icon theme based on the selected theme
-    case $selected_theme in
-        "redrose")
-            gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3-red"
-            gsettings set org.gnome.desktop.interface icon-theme "Tela-red"
-            ;;
-        "bluerod")
-            gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3-blue"
-            gsettings set org.gnome.desktop.interface icon-theme "Tela-purple"
-            ;;
-        "nyoom")
-            gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3-dark"
-            gsettings set org.gnome.desktop.interface icon-theme "Tela-black"
-            ;;
-    esac
+    wait
 
+    qtile cmd-obj -f restart
+}
+
+select_theme() {
+    local selected_theme
+    selected_theme=$(ls "$QTHEME_DIR" | rofi -dmenu -p "Select Theme:")
+
+    [[ -n "$selected_theme" ]] || { echo "No theme selected. Exiting."; exit 1; }
+
+    apply_theme "$selected_theme"
     select_wallpaper
 }
 
-# Function to select a wallpaper
-select_wallpaper() {
-    wallpaper_list=$(ls "$wallpaper_dir")
-    selected_wallpaper=$(echo "$wallpaper_list" | rofi -dmenu -p "Select Wallpaper:")
-
-    if [ -n "$selected_wallpaper" ]; then
-        # Set the selected wallpaper
-        feh --bg-fill "$wallpaper_dir/$selected_wallpaper"
-        echo "Wallpaper '$selected_wallpaper' set successfully!"
-    else
-        echo "No wallpaper selected. Using the default wallpaper."
-    fi
-
-    # Update user directories
-    xdg-user-dirs-update
-    xdg-user-dirs-gtk-update
-
-    # Display user directories
-    xdg-user-dir
-
-    # Restart Qtile to apply the changes
-    qtile cmd-obj -f restart
-
-    # Kill already running processes
-    for process in xsettingsd alacritty firefox dunst thunar ksuperkey; do
-        pidof "$process" && killall "$process"
-    done
-}
-
-# Start the script by selecting a theme
+_preflight
 select_theme
