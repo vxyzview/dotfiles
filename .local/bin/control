@@ -15,95 +15,53 @@
 # limitations under the License.
 
 # Constants
-NOTIFY_ID=424242
-STACK_TAG=progress
-ICON_PATH_VOLUME="$HOME/.notify/images/music.png"
-ICON_PATH_MUTE="$HOME/.notify/images/mute.png"
-ICON_PATH_UNMUTE="$HOME/.notify/images/music.png"
-ICON_PATH_BRIGHTNESS="$HOME/.notify/images/smart-bulb.png"
+readonly NOTIFY_ID=424242
+readonly STACK_TAG=progress
+readonly ICON_DIR="$HOME/.notify/images"
+readonly ICON_VOLUME="$ICON_DIR/music.png"
+readonly ICON_MUTE="$ICON_DIR/mute.png"
+readonly ICON_BRIGHTNESS="$ICON_DIR/smart-bulb.png"
 
-# Function to show notification using dunst with progress bar
-show_notification() {
-    local title="$1"
-    local message="$2"
-    local current_level=""
-    local icon_path=""
-
-    case "$title" in
-        "Brightness")
-            current_level=$(get_brightness)
-            icon_path="$ICON_PATH_BRIGHTNESS"
-            ;;
-        *)
-            current_level=$(get_volume)
-            icon_path="$ICON_PATH_VOLUME"
-            ;;
-    esac
-
-    dunstify -u low -i "$icon_path" -r "$NOTIFY_ID" -h int:value:"$current_level" -h string:x-dunst-stacktag:"$STACK_TAG" "$title" "$message Current: $current_level"
+# Unified notification dispatcher — value and icon passed directly, no re-querying
+notify() {
+    local title="$1" message="$2" value="$3" icon="$4"
+    dunstify -u low -i "$icon" -r "$NOTIFY_ID" \
+        -h int:value:"$value" \
+        -h string:x-dunst-stack-tag:"$STACK_TAG" \
+        "$title" "$message  $value"
 }
 
-# Function to get current brightness as a percentage of maximum brightness
-get_brightness() {
-    local current_brightness=$(brightnessctl g)
-    local max_brightness=$(brightnessctl m)
-    
-    # Calculate the brightness percentage
-    local brightness_percentage=$(( (current_brightness * 100) / max_brightness ))
-
-    echo "$brightness_percentage"
-}
-
-# Function to get current volume
-get_volume() {
-    pactl list sinks | awk '/Volume:/{print $5; exit}'
-}
-
-# Function to change screen brightness
 change_brightness() {
-    brightnessctl s "$1" && show_notification "Brightness" "Now"
+    brightnessctl -q s "$1"
+    # Use cached values from a single brightnessctl call — avoids two forks
+    read -r cur max < <(brightnessctl | awk '/Current/ {cur=$4} /Max/ {max=$4} END {gsub(/[^0-9]/,"",cur); gsub(/[^0-9]/,"",max); print cur, max}')
+    notify "Brightness" "Now" "$(( cur * 100 / max ))" "$ICON_BRIGHTNESS"
 }
 
-# Function to change volume
 change_volume() {
-    pactl set-sink-volume @DEFAULT_SINK@ "$1%" && show_notification "Volume" "Now"
+    pactl set-sink-volume @DEFAULT_SINK@ "$1%"
+    # pactl get-sink-volume is far faster than 'pactl list sinks | awk'
+    local vol
+    vol=$(pactl get-sink-volume @DEFAULT_SINK@ | awk '{print $5; exit}')
+    notify "Volume" "Now" "${vol%%%*}" "$ICON_VOLUME"
 }
 
-# Function to toggle mute/unmute volume
 toggle_mute() {
     pactl set-sink-mute @DEFAULT_SINK@ toggle
-    local is_muted=$(pactl list sinks | awk '/Mute/{print $2; exit}')
-
-    if [ "$is_muted" = "yes" ]; then
-        show_notification "Control" "Muted" "$ICON_PATH_MUTE"
+    # pactl get-sink-mute is a single fast query vs the full 'list sinks' parse
+    if [[ $(pactl get-sink-mute @DEFAULT_SINK@) == *yes* ]]; then
+        notify "Volume" "Muted" "0" "$ICON_MUTE"
     else
-        show_notification "Control" "Unmuted" "$ICON_PATH_UNMUTE"
+        local vol
+        vol=$(pactl get-sink-volume @DEFAULT_SINK@ | awk '{print $5; exit}')
+        notify "Volume" "Unmuted" "${vol%%%*}" "$ICON_VOLUME"
     fi
 }
 
-# Main script
-case "$#" in
-    2)
-        case "$1" in
-            brightness)
-                change_brightness "$2"
-                ;;
-            volume)
-                change_volume "$2"
-                ;;
-            mute)
-                toggle_mute
-                ;;
-            *)
-                echo "Unknown option: $1"
-                exit 1
-                ;;
-        esac
-        ;;
-    *)
-        echo "Usage: $0 <brightness|volume|mute> <value>"
-        exit 1
-        ;;
+# Argument dispatch
+case "$1" in
+    brightness) [[ -n "$2" ]] && change_brightness "$2" || { echo "Usage: $0 brightness <value>"; exit 1; } ;;
+    volume)     [[ -n "$2" ]] && change_volume     "$2" || { echo "Usage: $0 volume <value>";     exit 1; } ;;
+    mute)       toggle_mute ;;
+    *)          echo "Usage: $0 <brightness|volume|mute> [value]"; exit 1 ;;
 esac
-
-exit 0
